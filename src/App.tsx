@@ -78,18 +78,15 @@ export default function App() {
   const resultType = step === "result" ? computeMBTI(answers) : null;
   const resultInfo = resultType ? MBTI_TYPE_INFO[resultType] : null;
   const mainClassName =
-    step === "quiz" ? "mx-auto max-w-5xl px-4 py-8 sm:px-6" : "mx-auto max-w-3xl px-4 py-8 sm:px-6";
+    step === "quiz" ? "mx-auto max-w-5xl px-4 py-8 sm:px-6" : "mx-auto max-w-4xl px-4 py-8 sm:px-6";
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(226,232,240,0.95)_45%,_rgba(241,245,249,1)_100%)] text-slate-900">
-      <header className="border-b border-slate-200/80 bg-white/90 backdrop-blur">
-        <div className="mx-auto max-w-5xl px-4 py-4 sm:px-6">
-          <h1 className="text-lg font-semibold tracking-tight text-slate-900">Tư vấn hướng nghiệp</h1>
-          <p className="text-sm text-slate-600">Đại học Kinh tế Quốc dân (NEU)</p>
-        </div>
-      </header>
-
+    <div className="min-h-screen bg-slate-50 text-slate-900">
       <main className={mainClassName}>
+        <header className="mb-8 text-center">
+          <h1 className="text-2xl font-bold text-slate-800">Trắc nghiệm MBTI hướng nghiệp</h1>
+          <p className="mt-1 text-sm text-slate-600 sm:text-base">Tra cứu nhóm tính cách và gợi ý nghề nghiệp tại NEU</p>
+        </header>
         {step === "intro" && <Intro onStart={handleStart} />}
 
         {step === "quiz" && (
@@ -110,7 +107,7 @@ export default function App() {
         )}
       </main>
 
-      <footer className="mt-12 border-t border-slate-200 py-5 text-center text-sm text-slate-600">
+      <footer className="pb-8 text-center text-sm text-slate-500">
         Công cụ tham khảo, không thay thế tư vấn chuyên nghiệp. © NEU
       </footer>
     </div>
@@ -119,18 +116,17 @@ export default function App() {
 
 function Intro({ onStart }: { onStart: () => void }) {
   return (
-    <section className="relative overflow-hidden rounded-[2rem] bg-white px-6 py-8 text-slate-900 shadow-[0_24px_80px_rgba(15,23,42,0.08)] ring-1 ring-slate-200 sm:px-8 sm:py-10">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(99,102,241,0.12),_transparent_34%),radial-gradient(circle_at_bottom_left,_rgba(14,165,233,0.08),_transparent_30%)]" />
-      <div className="relative space-y-6">
-        <div className="inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-indigo-700">
+    <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+      <div className="space-y-6">
+        <div className="inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-indigo-700">
           MBTI Career Match
         </div>
 
         <div className="space-y-4">
-          <h2 className="max-w-2xl text-3xl font-semibold leading-tight text-slate-900 sm:text-4xl">
+          <h2 className="max-w-2xl text-3xl font-semibold leading-tight text-slate-900">
             Khám phá tính cách và nhóm nghề phù hợp với bạn tại NEU.
           </h2>
-          <p className="max-w-2xl text-base leading-7 text-slate-700 sm:text-lg">
+          <p className="max-w-2xl text-base leading-7 text-slate-700">
             Bài trắc nghiệm gồm <strong className="font-semibold text-slate-900">{totalQuestions} câu hỏi</strong>,
             hiển thị trên cùng một trang để bạn dễ quan sát, trả lời linh hoạt và rà soát lại trước khi xem kết quả.
           </p>
@@ -160,7 +156,7 @@ function Intro({ onStart }: { onStart: () => void }) {
         <button
           type="button"
           onClick={onStart}
-          className="inline-flex w-full items-center justify-center rounded-2xl bg-indigo-600 px-5 py-3.5 text-base font-semibold text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-white sm:w-auto"
+          className="inline-flex w-full items-center justify-center rounded-lg bg-indigo-600 px-5 py-3 text-base font-semibold text-white transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-white sm:w-auto"
         >
           Bắt đầu làm bài
         </button>
@@ -192,7 +188,7 @@ function Quiz({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[1.75rem] bg-white/95 p-5 shadow-sm ring-1 ring-slate-200/80 sm:p-6">
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl space-y-2">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Danh sách câu hỏi</p>
@@ -202,7 +198,7 @@ function Quiz({
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:min-w-[300px]">
+          <div className="grid grid-cols-2 gap-3 sm:min-w-[280px]">
             <SummaryStat label="Đã trả lời" value={`${answeredCount}/${questions.length}`} tone="emerald" />
             <SummaryStat label="Còn lại" value={`${remainingCount}`} tone="amber" />
           </div>
@@ -237,10 +233,10 @@ function Quiz({
             <article
               key={question.id}
               id={`question-${question.id}`}
-              className={`rounded-[1.5rem] border bg-white p-5 shadow-sm transition sm:p-6 ${
+              className={`rounded-xl border bg-white p-5 shadow-sm transition sm:p-6 ${
                 isMissing
                   ? "border-amber-300 shadow-[0_12px_40px_rgba(245,158,11,0.12)]"
-                  : "border-slate-200/80"
+                  : "border-slate-200"
               }`}
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -261,7 +257,7 @@ function Quiz({
                 </div>
               </div>
 
-              <div className="mt-5 rounded-[1.25rem] bg-slate-50 px-4 py-4 ring-1 ring-slate-200/80 sm:px-5">
+              <div className="mt-5 rounded-lg bg-slate-50 px-4 py-4 ring-1 ring-slate-200 sm:px-5">
                 <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.16em] sm:text-xs">
                   <span className="text-emerald-700">Đồng ý</span>
                   <span className="text-violet-700">Không đồng ý</span>
@@ -300,7 +296,7 @@ function Quiz({
         })}
       </div>
 
-      <section className="rounded-[1.75rem] border border-slate-200 bg-white p-5 text-slate-900 shadow-[0_24px_70px_rgba(15,23,42,0.08)] sm:p-6">
+      <section className="rounded-xl border border-slate-200 bg-white p-5 text-slate-900 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
             <p className="text-lg font-semibold">Sẵn sàng xem kết quả?</p>
@@ -314,7 +310,7 @@ function Quiz({
           <button
             type="button"
             onClick={onViewResult}
-            className="inline-flex items-center justify-center rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-white"
+            className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-white"
           >
             Xem kết quả
           </button>
@@ -339,7 +335,7 @@ function SummaryStat({
       : "bg-amber-50 text-amber-800 ring-amber-100";
 
   return (
-    <div className={`rounded-2xl px-4 py-4 ring-1 ${toneClassName}`}>
+    <div className={`rounded-lg px-4 py-4 ring-1 ${toneClassName}`}>
       <p className="text-xs font-semibold uppercase tracking-[0.18em]">{label}</p>
       <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
     </div>
@@ -646,6 +642,19 @@ function renderSectionContent(key: string, value: SectionValue) {
   );
 }
 
+function getResultSectionTone(key: string) {
+  if (key === "diem_manh" || key === "nganh_nghe_tuong_ung" || key === "moi_truong") {
+    return {
+      card: "border-amber-200 bg-amber-50/60",
+      title: "text-amber-900",
+    };
+  }
+  return {
+    card: "border-indigo-100 bg-indigo-50/50",
+    title: "text-indigo-900",
+  };
+}
+
 function Result({
   info: { type, nameVi, traits },
   mbtiType,
@@ -692,10 +701,17 @@ function Result({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/60">
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="rounded-xl bg-indigo-100 px-4 py-2 text-2xl font-bold text-indigo-800">{type}</span>
+          <span className="rounded-lg bg-indigo-100 px-4 py-2 text-2xl font-bold text-indigo-800">{type}</span>
           <h2 className="text-xl font-semibold text-slate-800">{nameVi}</h2>
+        </div>
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.15em] text-amber-700">Điểm nhấn kết quả</p>
+          <p className="mt-1 text-sm text-amber-900">
+            Nhóm <strong>{type}</strong> nổi bật ở đặc trưng <strong>{traits[0]}</strong>. Ưu tiên đọc kỹ mục{" "}
+            <strong>Điểm mạnh</strong> và <strong>Ngành, nghề tương ứng</strong> để chọn hướng phù hợp.
+          </p>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           {traits.map((trait) => (
@@ -706,8 +722,8 @@ function Result({
         </div>
       </div>
 
-      <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/60">
-        <h3 className="font-semibold text-slate-800">Tư vấn AI</h3>
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h3 className="font-semibold text-slate-800">Tư vấn AI theo hồ sơ MBTI</h3>
         {consultationLoading && (
           <div className="mt-3 flex items-center gap-2 text-indigo-600">
             <svg
@@ -742,12 +758,15 @@ function Result({
               { key: "nganh_nghe_tuong_ung", label: "NGÀNH, NGHỀ TƯƠNG ỨNG" },
             ]
               .filter((item) => consultationSections[item.key])
-              .map((item) => (
-                <section key={item.key} className="space-y-2">
-                  <h4 className="text-sm font-semibold text-slate-700">{item.label}</h4>
+              .map((item) => {
+                const tone = getResultSectionTone(item.key);
+                return (
+                <section key={item.key} className={`space-y-2 rounded-lg border px-4 py-3 ${tone.card}`}>
+                  <h4 className={`text-sm font-semibold ${tone.title}`}>{item.label}</h4>
                   {renderSectionContent(item.key, consultationSections[item.key] as SectionValue)}
                 </section>
-              ))}
+                );
+              })}
           </div>
         )}
         {!consultationLoading && !consultationSections && consultationText && (
@@ -758,7 +777,7 @@ function Result({
       <button
         type="button"
         onClick={onRetry}
-        className="w-full rounded-xl border-2 border-slate-300 bg-white px-4 py-3 font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+        className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
       >
         Làm lại bài trắc nghiệm
       </button>

@@ -27,13 +27,29 @@ npm run build
 
 Kết quả build nằm trong thư mục `dist/`.
 
+Nếu deploy dưới AI Portal có base path (ví dụ `/tuyen-sinh`), dùng:
+
+```bash
+npm run build:basepath
+```
+
 ## Đóng gói ZIP (AI Portal)
 
 ```bash
 npm run pack
 ```
 
-Tạo file **`dist/mbti-career-neu.zip`** chứa `manifest.json` và thư mục `public/` (build) để tải lên AI Portal. **Không dùng `sudo`** khi chạy; nếu gặp lỗi quyền, sửa quyền thư mục: `sudo chown -R $(whoami) dist .`
+Tạo file **`dist/mbti-career-neu.zip`** chứa `manifest.json` và thư mục `public/` (build) để tải lên AI Portal.
+
+Với môi trường base path `/tuyen-sinh`, dùng:
+
+```bash
+npm run pack:basepath
+```
+
+Lệnh này tạo file **`dist/mbti-career-neu-basepath.zip`**.
+
+**Không dùng `sudo`** khi chạy; nếu gặp lỗi quyền, sửa quyền thư mục: `sudo chown -R $(whoami) dist .`
 
 ## Công nghệ
 

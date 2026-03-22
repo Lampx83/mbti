@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+:root {
+  --likert-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.likert-shell {
+  width: 100%;
+}
+
+.likert-scale {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.625rem;
+}
+
+.likert-scale::before {
+  content: "";
+  position: absolute;
+  left: 0.625rem;
+  right: 0.625rem;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #10b981 0%, #6ee7b7 28%, #9ca3af 50%, #c4b5fd 72%, #8b5cf6 100%);
+  opacity: 0.56;
+  pointer-events: none;
+}
+
+.likert-option {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  border-radius: 9999px;
+  border: 2px solid var(--likert-color, #9ca3af);
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 8%);
+  transition:
+    transform 180ms var(--likert-ease),
+    border-color 180ms var(--likert-ease),
+    box-shadow 220ms var(--likert-ease),
+    background-color 220ms var(--likert-ease),
+    filter 220ms var(--likert-ease);
+}
+
+.likert-option:hover {
+  transform: scale(1.08);
+  border-width: 3px;
+  box-shadow:
+    0 0 0 4px var(--likert-glow, rgb(148 163 184 / 20%)),
+    0 8px 16px rgb(15 23 42 / 14%);
+}
+
+.likert-option.is-selected {
+  background: var(--likert-color, #9ca3af);
+  border-color: var(--likert-color, #9ca3af);
+  box-shadow:
+    0 0 0 5px var(--likert-glow, rgb(148 163 184 / 20%)),
+    0 10px 22px rgb(15 23 42 / 20%);
+}
+
+.likert-option.is-selected:hover {
+  transform: scale(1.12);
+  filter: brightness(1.08);
+  box-shadow:
+    0 0 0 6px var(--likert-glow, rgb(148 163 184 / 20%)),
+    0 12px 24px rgb(15 23 42 / 24%);
+}
+
+.likert-option:focus-visible {
+  outline: 3px solid rgb(15 23 42 / 40%);
+  outline-offset: 4px;
+}
+
+.likert-scale.is-completed .likert-option.is-selected {
+  transform: scale(1.05);
+}
+
+.likert-scale-card::before {
+  left: 0.75rem;
+  right: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .likert-scale {
+    gap: 0.45rem;
+  }
+
+  .likert-scale-card::before {
+    left: 0.5rem;
+    right: 0.5rem;
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "mbti-career-neu",
+  "version": "1.0.0",
+  "description": "Trắc nghiệm MBTI định hướng nghề nghiệp cho sinh viên Đại học Kinh tế Quốc dân",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "pack": "npm run build && node scripts/pack.mjs",
+    "pack:basepath": "npm run pack",
+    "pack:full": "npm run build && node scripts/pack-full.mjs",
+    "start": "node server.js",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "mammoth": "^1.8.0",
+    "minio": "^8.0.2",
+    "openai": "^6.27.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "adm-zip": "^0.5.16",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5",
+    "vite": "^5.4.10"
+  }
+}

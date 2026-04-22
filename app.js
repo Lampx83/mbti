@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import * as Minio from "minio";
 import mammoth from "mammoth";
 import OpenAI from "openai";
+import pool from "./src/db.js";
 
 dotenv.config();
 
@@ -19,6 +20,28 @@ const MBTI_TYPES = [
   "ISTJ", "ISFJ", "ESTJ", "ESFJ",
   "ISTP", "ISFP", "ESTP", "ESFP",
 ];
+
+function isValidMbtiCode(code) {
+  return typeof code === "string" && MBTI_TYPES.includes(code.trim().toUpperCase());
+}
+
+function isValidAnswerValue(v) {
+  return Number.isInteger(v) && v >= 1 && v <= 7;
+}
+
+function normalizeAnswersInput(answers) {
+  if (!Array.isArray(answers)) return null;
+  const normalized = [];
+  for (const item of answers) {
+    const question_number = Number(item?.question_number);
+    const answer_value = Number(item?.answer_value);
+    if (!Number.isInteger(question_number) || question_number < 1) return null;
+    if (!isValidAnswerValue(answer_value)) return null;
+    normalized.push({ question_number, answer_value });
+  }
+  if (normalized.length === 0) return null;
+  return normalized;
+}
 
 
 const MINIO_ENDPOINT = process.env.MINIO_ENDPOINT || "203.113.132.48";
@@ -40,6 +63,40 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.2";
 const openaiClient = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
+
+const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || "")
+  .trim()
+  .replace(/\/$/, "");
+const OLLAMA_MODEL = (process.env.OLLAMA_MODEL || "").trim() || "gpt-oss:20b";
+
+function resolveAIProvider() {
+  const pref = String(process.env.AI_PROVIDER || "auto").trim().toLowerCase();
+  if (pref === "none") return "none";
+  if (pref === "ollama") return OLLAMA_BASE_URL ? "ollama" : "none";
+  if (pref === "openai") return openaiClient ? "openai" : "none";
+  if (pref === "auto") {
+    if (OLLAMA_BASE_URL) return "ollama";
+    if (openaiClient) return "openai";
+    return "none";
+  }
+  return "none";
+}
+
+function extractJsonCandidate(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return raw;
+
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenced?.[1]) return fenced[1].trim();
+
+  const firstBrace = raw.indexOf("{");
+  const lastBrace = raw.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    return raw.slice(firstBrace, lastBrace + 1).trim();
+  }
+
+  return raw;
+}
 
 
 function streamToBuffer(stream) {
@@ -293,6 +350,111 @@ function cleanSectionText(text) {
     .trim();
 }
 
+function stripLeadingTokensByNorm(text, normTokens) {
+  const raw = String(text || "").trim();
+  if (!raw) return raw;
+
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  if (tokens.length < normTokens.length) return raw;
+
+  for (let i = 0; i < normTokens.length; i += 1) {
+    if (normalizeHeading(tokens[i]) !== normTokens[i]) return raw;
+  }
+
+  return tokens.slice(normTokens.length).join(" ").trim();
+}
+
+function cleanBulletListText(text, mbtiType) {
+  if (!text) return text;
+
+  const rawLines = String(text)
+    .split("\n")
+    .map((line) => String(line || "").trim())
+    .filter(Boolean);
+
+  const items = [];
+  for (const rawLine of rawLines) {
+    const stripped = stripLeadingNumber(rawLine).trim();
+    if (!stripped) continue;
+
+    const isNewItem = stripped !== rawLine;
+    if (!items.length) {
+      items.push(stripped);
+      continue;
+    }
+
+    if (isNewItem) {
+      items.push(stripped);
+      continue;
+    }
+
+    // likely a wrapped continuation line
+    items[items.length - 1] = `${items[items.length - 1]} ${stripped}`.trim();
+  }
+
+  const mbti = String(mbtiType || "").trim().toUpperCase();
+  const cleanedItems = items
+    .map((item) => {
+      let s = String(item || "").replace(/\s+/g, " ").trim();
+      if (!s) return "";
+
+      // Drop stray heading fragments sometimes returned by LLMs
+      s = stripLeadingTokensByNorm(s, ["MOI", "TRUONG", "LAM", "VIEC", "PHU", "HOP"]);
+      s = stripLeadingTokensByNorm(s, ["LAM", "VIEC", "PHU", "HOP"]);
+
+      // Sometimes the model repeats MBTI code at the start of a bullet
+      if (mbti) {
+        const tokens = s.split(/\s+/);
+        if (normalizeHeading(tokens[0]) === mbti) {
+          s = tokens.slice(1).join(" ").trim();
+        }
+      }
+
+      // Viết hoa chữ cái đầu mỗi ý
+      if (s.length > 0) {
+        s = s.charAt(0).toUpperCase() + s.slice(1);
+      }
+
+      return s;
+    })
+    .filter((item) => {
+      const norm = normalizeHeading(item);
+      return norm && norm !== "LAM VIEC PHU HOP" && norm !== "MOI TRUONG LAM VIEC PHU HOP";
+    });
+
+  return cleanedItems.join("\n").trim();
+}
+
+function cleanKhaiNiemText(text) {
+  let s = cleanSectionText(text);
+  if (!s) return s;
+
+  const head = s.slice(0, 140);
+  const dimHint =
+    /(Extraversion|Introversion|Sensing|Intuition|Thinking|Feeling|Judging|Perceiving|I\/E|E\/I|S\/N|N\/S|T\/F|F\/T|J\/P|P\/J)/i;
+
+  if (dimHint.test(head)) {
+    const closeParenIdx = head.indexOf(")");
+    if (closeParenIdx !== -1) {
+      s = s.slice(closeParenIdx + 1).trim();
+    } else {
+      // handle cases like: "Sensing : Thinking : Judging) ..." (missing opening parenthesis)
+      s = s.replace(/^[A-Za-z\s\/:,-]{0,80}\)\s*/u, "");
+      // or "Extraversion / Sensing / Thinking / Judging: ..." (no parens)
+      s = s.replace(/^[A-Za-z\s\/,-]{0,80}:\s+/u, "");
+    }
+  }
+
+  s = s.replace(/^\)\s*/u, "").trim();
+
+  // Strip MBTI type code lặp đầu khai_niem: "INFJ – INFJ là..." -> "Là..."
+  // hoặc solo prefix "INFJ – " (frontend tự thêm prefix riêng)
+  s = s.replace(/^([A-Z]{4})\s*[-–—]\s*\1\b\s*/u, '').trim();
+  s = s.replace(/^[A-Z]{4}\s*[-–—]\s*/u, '').trim();
+
+  return s;
+}
+
 /**
  * Parse the raw nganh_nghe_tuong_ung block into "Tên ngành: Nghề1, Nghề2" format.
  * Group headers (Lĩnh vực / Nhóm ngành) are preserved as section titles.
@@ -418,7 +580,7 @@ function cleanNganhNghe(text) {
   return output.join("\n").trim();
 }
 
-function normalizeSections(sections) {
+function normalizeSections(sections, mbtiType) {
   if (!sections || typeof sections !== "object") return null;
   const normalized = {};
   for (const def of SECTION_DEFS) {
@@ -427,15 +589,22 @@ function normalizeSections(sections) {
       if (def.key === "nganh_nghe_tuong_ung") {
         const cleaned = cleanNganhNghe(value);
         if (cleaned) normalized[def.key] = cleaned;
+      } else if (def.key === "khai_niem") {
+        const cleaned = cleanKhaiNiemText(value);
+        if (cleaned) normalized[def.key] = cleaned;
+      } else if (def.key === "diem_manh" || def.key === "diem_yeu" || def.key === "moi_truong") {
+        const cleaned = cleanBulletListText(value, mbtiType) || cleanSectionText(value);
+        if (cleaned) normalized[def.key] = cleaned;
       } else {
-        normalized[def.key] = cleanSectionText(value);
+        const cleaned = cleanSectionText(value);
+        if (cleaned) normalized[def.key] = cleaned;
       }
     }
   }
   return Object.keys(normalized).length ? normalized : null;
 }
 
-async function extractSectionsWithAI(text, mbtiType) {
+async function extractSectionsWithOpenAI(text, mbtiType) {
   if (!openaiClient) return null;
   try {
     const response = await openaiClient.responses.create({
@@ -464,23 +633,26 @@ async function extractSectionsWithAI(text, mbtiType) {
 
             "**diem_manh**: Lấy phần điểm mạnh (là mục số 3. trong tài liệu). " +
             "Bỏ tiêu đề mục và tất cả số thứ tự đầu dòng. " +
-            "Mỗi điểm mạnh trình bày trên một dòng, BẮT BUỘC bắt đầu bằng dấu '- ' (gạch ngang cách).\n\n" +
+            "Mỗi điểm mạnh trình bày trên một dòng, BẮT BUỘC bắt đầu bằng dấu '- ' (gạch ngang cách). Viết hoa chữ cái đầu tiên của mỗi ý.\n\n" +
 
             "**diem_yeu**: Lấy phần hạn chế (là mục số 4. trong tài liệu). " +
             "Bỏ tiêu đề mục và tất cả số thứ tự đầu dòng. " +
-            "Mỗi hạn chế trình bày trên một dòng, BẮT BUỘC bắt đầu bằng dấu '- ' (gạch ngang cách).\n\n" +
+            "Mỗi hạn chế trình bày trên một dòng, BẮT BUỘC bắt đầu bằng dấu '- ' (gạch ngang cách). Viết hoa chữ cái đầu tiên của mỗi ý.\n\n" +
 
             "**moi_truong**: Lấy phần môi trường làm việc phù hợp (thường là mục số 5 trong tài liệu). " +
             "Bỏ tiêu đề mục và tất cả số thứ tự đầu dòng. " +
-            "Mỗi ý trình bày trên một dòng, BẮT BUỘC bắt đầu bằng dấu '- ' (gạch ngang cách).\n\n" +
+            "Mỗi ý trình bày trên một dòng, BẮT BUỘC bắt đầu bằng dấu '- ' (gạch ngang cách). Viết hoa chữ cái đầu tiên của mỗi ý.\n\n" +
 
-            "**nganh_nghe_tuong_ung**: Lấy toàn bộ danh mục ngành nghề trong tài liệu. " +
-            "Nếu tài liệu có tiêu đề nhóm ngành/lĩnh vực (ví dụ: 'Lĩnh vực Kinh doanh', 'Nhóm ngành Kinh tế'), GIỮ nguyên dòng đó như tiêu đề nhóm. " +
-            "Với mỗi ngành, xuất ĐÚNG 1 dòng theo format: Tên ngành: Nghề1, Nghề2, Nghề3\n" +
-            "Ví dụ: Quản trị kinh doanh: Trưởng phòng kinh doanh, Key Account Manager, Chuyên viên marketing\n" +
-            "TUYỆT ĐỐI KHÔNG dùng 'Nghề nghiệp tương ứng:' trên dòng riêng. " +
-            "TUYỆT ĐỐI KHÔNG tách thành 2 danh sách riêng. " +
-            "Không để số thứ tự (6.1, 6.2.1...) và không giữ mã ngành trong ngoặc.\n\n" +
+            "**nganh_nghe_tuong_ung**: Lấy toàn bộ danh mục ngành nghề trong tài liệu theo cấu trúc 3 tầng.\n" +
+            "TẦNG 1 – Lĩnh vực: bắt đầu bằng '## Lĩnh vực: Tên lĩnh vực'\n" +
+            "TẦNG 2 – Ngành: bắt đầu bằng '### Ngành: Tên ngành' (bỏ hết mã số trong ngoặc)\n" +
+            "TẦNG 3 – Nghề nghiệp: mỗi nghề trên 1 dòng bắt đầu bằng '- '\n" +
+            "Ví dụ:\n" +
+            "## Lĩnh vực: Kinh doanh và quản lý\n" +
+            "### Ngành: Quản trị kinh doanh\n" +
+            "- Trưởng phòng kinh doanh\n" +
+            "- Key Account Manager\n" +
+            "KHÔNG ghi mã ngành (7340101...). KHÔNG dùng 'Nghề nghiệp tương ứng:' riêng dòng.\n\n" +
 
             "## TÀI LIỆU\n" +
             text,
@@ -517,11 +689,120 @@ async function extractSectionsWithAI(text, mbtiType) {
 
     const outputText = response.output_text || "";
     const parsed = JSON.parse(outputText);
-    return normalizeSections(parsed);
+    return normalizeSections(parsed, mbtiType);
   } catch (err) {
     console.error("[AI Extract] Loi:", err.message);
     return null;
   }
+}
+
+async function extractSectionsWithOllama(text, mbtiType) {
+  if (!OLLAMA_BASE_URL) return null;
+  if (typeof fetch !== "function") {
+    throw new Error("Node.js fetch khong san sang. Can Node 18+.");
+  }
+
+  const systemPrompt =
+    "Ban la bo may trich xuat du lieu. NHIEM VU: tra ve DUY NHAT 1 JSON object hop le (khong markdown, khong giai thich). " +
+    "JSON phai co dung 7 khoa sau (snake_case), moi gia tri la string: " +
+    "ten_tinh_cach, khai_niem, phan_tich_cac_chieu_tinh_cach, diem_manh, diem_yeu, moi_truong, nganh_nghe_tuong_ung. " +
+    "Neu khong tim thay muc nao, tra ve chuoi rong. Khong duoc them khoa khac.\n\n" +
+    "YEU CAU DINH DANG:\n" +
+    "- ten_tinh_cach: chi tra ve dung ma MBTI (vi du: \"ESTJ\").\n" +
+    "- khai_niem: 1 doan van tieng Viet mo ta tong quan. KHONG duoc bat dau bang danh sach (Extraversion/Sensing/Thinking/Judging) hay ky tu ngoac cua danh sach do.\n" +
+    "- phan_tich_cac_chieu_tinh_cach: moi chieu tren 1 dong, bat dau bang '- '.\n" +
+    "- diem_manh, diem_yeu, moi_truong: moi y tren 1 dong, bat dau bang '- '. KHONG duoc chen tieu de nhu 'Lam viec phu hop'.\n" +
+    "- nganh_nghe_tuong_ung: cu phap 3 tang: '## Linh vuc: Ten' -> '### Nganh: Ten' -> '- Nghe nghiep'. Bo ma so nganh. Moi nghe tren 1 dong bat dau bang '- '.";
+
+  const userPrompt =
+    `Loai MBTI: ${mbtiType}\n` +
+    "Hay trich xuat cac muc tu van tu van ban duoi day va tra ve JSON.\n\n" +
+    "VAN BAN:\n" +
+    text;
+
+  const chatUrl = `${OLLAMA_BASE_URL}/api/chat`;
+  const generateUrl = `${OLLAMA_BASE_URL}/api/generate`;
+
+  const tryChat = async () => {
+    const resp = await fetch(chatUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        stream: false,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        options: { temperature: 0 },
+      }),
+    });
+
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      const err = new Error(`Ollama /api/chat loi ${resp.status}: ${body.slice(0, 200)}`);
+      err.status = resp.status;
+      throw err;
+    }
+
+    const data = await resp.json();
+    const content = data?.message?.content ?? "";
+    return content;
+  };
+
+  const tryGenerate = async () => {
+    const resp = await fetch(generateUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        stream: false,
+        prompt: `${systemPrompt}\n\n${userPrompt}`,
+        options: { temperature: 0 },
+      }),
+    });
+
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      throw new Error(`Ollama /api/generate loi ${resp.status}: ${body.slice(0, 200)}`);
+    }
+
+    const data = await resp.json();
+    const content = data?.response ?? "";
+    return content;
+  };
+
+  try {
+    let content = "";
+    try {
+      content = await tryChat();
+    } catch (err) {
+      const status = err?.status;
+      if (status === 404 || status === 405) {
+        content = await tryGenerate();
+      } else {
+        // fallback if /api/chat blocked by proxy but still have /api/generate
+        try {
+          content = await tryGenerate();
+        } catch (fallbackErr) {
+          throw err;
+        }
+      }
+    }
+
+    const jsonCandidate = extractJsonCandidate(content);
+    const parsed = JSON.parse(jsonCandidate);
+    return normalizeSections(parsed, mbtiType);
+  } catch (err) {
+    console.error("[Ollama Extract] Loi:", err.message);
+    return null;
+  }
+}
+
+async function extractSectionsWithAI(text, mbtiType, provider) {
+  if (provider === "openai") return extractSectionsWithOpenAI(text, mbtiType);
+  if (provider === "ollama") return extractSectionsWithOllama(text, mbtiType);
+  return null;
 }
 
 
@@ -560,17 +841,18 @@ app.get("/api/ai-consultation", async (req, res) => {
       return res.status(500).json({ error: "Du lieu DOCX trong hoac khong trich xuat duoc van ban." });
     }
 
-    const heuristicSections = normalizeSections(extractSectionsByHeadings(text));
+    const heuristicSections = normalizeSections(extractSectionsByHeadings(text), mbtiType);
     const useAIParam = String(req.query.useAI || "").toLowerCase();
-    const useAI = openaiClient && useAIParam !== "false";
-    const aiSections = useAI ? await extractSectionsWithAI(text, mbtiType) : null;
+    const provider = resolveAIProvider();
+    const useAI = provider !== "none" && useAIParam !== "false";
+    const aiSections = useAI ? await extractSectionsWithAI(text, mbtiType, provider) : null;
     const sections = aiSections || heuristicSections;
 
     return res.json({
       mbtiType,
       consultation: text,
       sections,
-      sections_source: aiSections ? "ai" : heuristicSections ? "heuristic" : "none",
+      sections_source: aiSections ? `ai:${provider}` : heuristicSections ? "heuristic" : "none",
       objectName: objectNameUsed,
     });
   } catch (err) {
@@ -579,6 +861,65 @@ app.get("/api/ai-consultation", async (req, res) => {
       error: "Loi khi tai tu van tu tai lieu.",
       detail: err.message,
     });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MBTI logging to PostgreSQL
+// Tables:
+//   - mbti_types
+//   - mbti_sessions
+//   - mbti_answers
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.post("/api/mbti/sessions", async (req, res) => {
+  const user_name = typeof req.body?.user_name === "string" ? req.body.user_name.trim() : "";
+  const user_profile_id = typeof req.body?.user_profile_id === "string" ? req.body.user_profile_id.trim() : "";
+  const mbti_result_raw = req.body?.mbti_result;
+  const mbti_result = typeof mbti_result_raw === "string" ? mbti_result_raw.trim().toUpperCase() : "";
+  const answers = normalizeAnswersInput(req.body?.answers);
+
+  if (!user_name) return res.status(400).json({ error: "user_name bat buoc" });
+  if (!user_profile_id) return res.status(400).json({ error: "user_profile_id bat buoc" });
+  if (!isValidMbtiCode(mbti_result)) return res.status(400).json({ error: "mbti_result khong hop le" });
+  if (!answers) return res.status(400).json({ error: "answers khong hop le" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const sessionIns = await client.query(
+      `INSERT INTO mbti_sessions (user_name, user_profile_id, mbti_result)
+       VALUES ($1, $2, $3)
+       RETURNING id, user_name, user_profile_id, mbti_result, created_at`,
+      [user_name, user_profile_id, mbti_result],
+    );
+    const session = sessionIns.rows[0];
+
+    // Batch insert answers
+    const values = [];
+    const params = [];
+    let p = 1;
+    for (const a of answers) {
+      // (session_id, question_number, answer_value)
+      values.push(`($${p++}, $${p++}, $${p++})`);
+      params.push(session.id, a.question_number, a.answer_value);
+    }
+
+    await client.query(
+      `INSERT INTO mbti_answers (session_id, question_number, answer_value)
+       VALUES ${values.join(", ")}`,
+      params,
+    );
+
+    await client.query("COMMIT");
+    return res.status(201).json({ session, answers_saved: answers.length });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[MBTI] save session error:", err?.message || err);
+    return res.status(500).json({ error: "Loi luu ket qua MBTI" });
+  } finally {
+    client.release();
   }
 });
 

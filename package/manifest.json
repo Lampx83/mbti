@@ -1,7 +1,7 @@
 {
   "id": "mbti-career-neu",
   "alias": "mbti-career-neu",
-  "name": "Khám phá tính cách",
+  "name": "Trắc nghiệm MBTI – Định hướng nghề nghiệp",
   "description": "Trắc nghiệm MBTI giúp sinh viên Đại học Kinh tế Quốc dân (NEU) khám phá nhóm tính cách và gợi ý hướng nghề nghiệp, ngành học phù hợp.",
   "keywords": ["MBTI", "trắc nghiệm tính cách", "định hướng nghề nghiệp", "NEU", "sinh viên kinh tế", "hướng nghiệp"],
   "version": "1.0.1",

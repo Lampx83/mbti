@@ -12,12 +12,18 @@ Công cụ trắc nghiệm MBTI dành cho sinh viên **Đại học Kinh tế Qu
 ## Chạy dự án
 
 ```bash
-cd Tools/MBTI-Career-NEU
 npm install
 npm run dev
 ```
 
 Mở trình duyệt tại: **http://localhost:3001**
+
+## Cấu hình AI (không cần API key)
+
+- Dùng Ollama server: cấu hình trong `.env`:
+  - `AI_PROVIDER=ollama`
+  - `OLLAMA_BASE_URL=https://research.neu.edu.vn/ollama`
+  - `OLLAMA_MODEL` chọn theo danh sách model ở `.../ollama/api/tags`
 
 ## Build
 
@@ -27,29 +33,13 @@ npm run build
 
 Kết quả build nằm trong thư mục `dist/`.
 
-Nếu deploy dưới AI Portal có base path (ví dụ `/tuyen-sinh`), dùng:
-
-```bash
-npm run build:basepath
-```
-
 ## Đóng gói ZIP (AI Portal)
 
 ```bash
 npm run pack
 ```
 
-Tạo file **`dist/mbti-career-neu.zip`** chứa `manifest.json` và thư mục `public/` (build) để tải lên AI Portal.
-
-Với môi trường base path `/tuyen-sinh`, dùng:
-
-```bash
-npm run pack:basepath
-```
-
-Lệnh này tạo file **`dist/mbti-career-neu-basepath.zip`**.
-
-**Không dùng `sudo`** khi chạy; nếu gặp lỗi quyền, sửa quyền thư mục: `sudo chown -R $(whoami) dist .`
+Tạo file **`dist/mbti-career-neu.zip`** chứa `manifest.json` và thư mục `public/` (build) để tải lên AI Portal. **Không dùng `sudo`** khi chạy; nếu gặp lỗi quyền, sửa quyền thư mục: `sudo chown -R $(whoami) dist .`
 
 ## Công nghệ
 

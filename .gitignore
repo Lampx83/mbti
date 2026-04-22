@@ -1,13 +1,26 @@
+## OS / editor
 .DS_Store
+.vscode/
+
+## Dependencies / builds
 node_modules/
 dist/
+build/
+.next/
+.vercel/
+
+## Env files
 .env
 .env.*
 !.env.example
+
+## Logs / debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+## Tooling output
 coverage/
 .cache/
 *.local

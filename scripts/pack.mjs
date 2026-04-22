@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 /**
  * Đóng gói MBTI-Career-NEU thành zip để đưa lên AI Portal.
- * Chạy: npm run pack  → dist/mbti-career-neu.zip
- * Chạy: npm run pack:basepath  → dist/mbti-career-neu-basepath.zip
+ * Chạy: npm run pack  → dist/mbti-career-neu.zip (manifest.json + public/)
  */
 import fs from "fs";
 import path from "path";
@@ -11,9 +10,8 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
 const buildDir = path.join(root, process.env.PACK_SOURCE || "dist");
-const baseName = process.env.PACK_BASEPATH ? "mbti-career-neu-basepath" : "mbti-career-neu";
-const outDir = path.join(root, process.env.PACK_OUTPUT_DIR || "dist");
-const outZip = path.join(outDir, `${baseName}.zip`);
+const outDir = path.join(root, "dist");
+const outZip = path.join(outDir, "mbti-career-neu.zip");
 
 function addDirToZip(zip, localDir, zipPrefix = "") {
   if (!fs.existsSync(localDir)) return;

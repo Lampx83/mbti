@@ -26,6 +26,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        VITE_AI_API_BASE: ${VITE_AI_API_BASE:-}
+        VITE_LOG_API_BASE: ${VITE_LOG_API_BASE:-http://101.96.66.232:8088}
     container_name: mbti-api
     restart: unless-stopped
     depends_on:

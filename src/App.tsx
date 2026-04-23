@@ -7,9 +7,8 @@ type Step = "intro" | "quiz" | "result";
 type SectionValue = string | string[];
 
 const totalQuestions = MBTI_QUESTIONS.length;
-// Default to the public backend (works in embed environments where portal origin requires auth).
-// Override via VITE_API_BASE when deploying API + frontend on same origin.
-const API_BASE = (import.meta.env.VITE_API_BASE ?? "https://mbti-career-neu.vercel.app").replace(/\/$/, "");
+// Default: same-origin API ("/api/..."). Set VITE_API_BASE to call a separate API host.
+const API_BASE = (import.meta.env.VITE_API_BASE ?? "").trim().replace(/\/$/, "");
 const BULLET_SECTION_KEYS = new Set(["diem_manh", "diem_yeu", "moi_truong"]);
 const QUIZ_SCALE_OPTIONS = [
   { value: 1, size: 38, color: "#8b5cf6", glow: "rgba(139, 92, 246, 0.24)", label: "Hoàn toàn không đồng ý" },

@@ -33,6 +33,15 @@ npm run build
 
 Kết quả build nằm trong thư mục `dist/`.
 
+## Cấu hình API khi deploy
+
+Frontend dùng 2 biến môi trường (set lúc build):
+
+- `VITE_AI_API_BASE`: base URL cho tính năng **"Tư vấn từ AI"** (`/api/ai-consultation`). Ví dụ: `https://<vercel-app>.vercel.app`
+- `VITE_LOG_API_BASE`: base URL cho tính năng **lưu kết quả MBTI vào PostgreSQL** (`/api/mbti/sessions`). Ví dụ: `http://101.96.66.232:8088`
+
+Nếu không set biến nào, mặc định frontend sẽ gọi API theo **same-origin** (ví dụ bạn serve frontend chung với API).
+
 ## Đóng gói ZIP (AI Portal)
 
 ```bash

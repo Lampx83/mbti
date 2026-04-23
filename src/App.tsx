@@ -7,8 +7,13 @@ type Step = "intro" | "quiz" | "result";
 type SectionValue = string | string[];
 
 const totalQuestions = MBTI_QUESTIONS.length;
-// Default: same-origin API ("/api/..."). Set VITE_API_BASE to call a separate API host.
-const API_BASE = (import.meta.env.VITE_API_BASE ?? "").trim().replace(/\/$/, "");
+// Split API bases:
+// - VITE_AI_API_BASE: AI consultation (OpenAI/MinIO). Defaults to legacy VITE_API_BASE, then empty (=same-origin).
+// - VITE_LOG_API_BASE: MBTI logging API (PostgreSQL). Defaults to empty (=same-origin).
+const AI_API_BASE = (import.meta.env.VITE_AI_API_BASE ?? import.meta.env.VITE_API_BASE ?? "")
+  .trim()
+  .replace(/\/$/, "");
+const LOG_API_BASE = (import.meta.env.VITE_LOG_API_BASE ?? "").trim().replace(/\/$/, "");
 const BULLET_SECTION_KEYS = new Set(["diem_manh", "diem_yeu", "moi_truong"]);
 const QUIZ_SCALE_OPTIONS = [
   { value: 1, size: 38, color: "#8b5cf6", glow: "rgba(139, 92, 246, 0.24)", label: "Hoàn toàn không đồng ý" },
@@ -1340,7 +1345,7 @@ function Result({
     setConsultationError(null);
     setConsultationText(null);
     setConsultationSections(null);
-    fetch(`${API_BASE}/api/ai-consultation?mbtiType=${encodeURIComponent(mbtiType)}`)
+    fetch(`${AI_API_BASE}/api/ai-consultation?mbtiType=${encodeURIComponent(mbtiType)}`)
       .then((res) => {
         if (!res.ok) {
           throw new Error(res.status === 404 ? "Chưa có dữ liệu tư vấn cho tính cách này." : "Tải tư vấn thất bại.");
@@ -1422,7 +1427,7 @@ function Result({
     }
 
     try {
-      const resp = await fetch(`${API_BASE}/api/mbti/sessions`, {
+      const resp = await fetch(`${LOG_API_BASE}/api/mbti/sessions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

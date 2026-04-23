@@ -1,0 +1,8 @@
+node_modules
+dist
+dist-base
+.git
+.vscode
+.cursor
+npm-debug.log
+*.zip

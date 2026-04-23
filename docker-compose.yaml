@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-mbti_log}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-12356a@!!@}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-12356a@}
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "${POSTGRES_PORT:-8086}:5432"
@@ -42,7 +42,7 @@ services:
       PGPORT: 5432
       PGDATABASE: ${POSTGRES_DB:-mbti_log}
       PGUSER: ${POSTGRES_USER:-postgres}
-      PGPASSWORD: ${POSTGRES_PASSWORD:-12356a@!!}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-12356a@}
     ports:
       - "${API_PORT:-8088}:4000"
   pgadmin:
@@ -54,7 +54,7 @@ services:
         condition: service_healthy
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@admin.com}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-12356a@!!}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-12356a@}
     ports:
       - "${PGADMIN_PORT:-8087}:80"
     volumes:

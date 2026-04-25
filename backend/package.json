@@ -1,0 +1,21 @@
+{
+  "name": "@ai-portal/mbti-career-neu-backend",
+  "version": "1.0.0",
+  "description": "MBTI Career NEU backend — API và lưu trữ PostgreSQL",
+  "type": "module",
+  "main": "dist/embed.js",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "mammoth": "^1.8.0",
+    "minio": "^8.0.2",
+    "openai": "^6.27.0",
+    "pg": "^8.12.0"
+  }
+}

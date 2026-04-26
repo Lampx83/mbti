@@ -10,7 +10,6 @@ export default defineConfig({
   server: {
     port: 3001,
     proxy: {
-      // Dev convenience: forward API calls to local Express server
       "/api": { target: "http://localhost:4000", changeOrigin: true },
       "/health": { target: "http://localhost:4000", changeOrigin: true },
     },

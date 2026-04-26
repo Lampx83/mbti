@@ -25,4 +25,4 @@ pnpm-debug.log*
 coverage/
 .cache/
 *.local
-*.tsbuildinfo
+*.tsbuildinfodist-public/

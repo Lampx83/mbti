@@ -2,18 +2,34 @@ import { useState, useCallback, useEffect, useRef, type CSSProperties } from "re
 import { MBTI_QUESTIONS, MBTI_TYPE_INFO } from "./mbti-data";
 import type { MBTIQuestion } from "./mbti-data";
 import { computeMBTI, computeMBTIScores, type AnswerRecord } from "./mbti-score";
+import AdminPage from "./admin";
 
-type Step = "intro" | "quiz" | "result";
+type Step = "intro" | "quiz" | "result" | "admin";
 type SectionValue = string | string[];
 
 const totalQuestions = MBTI_QUESTIONS.length;
-// Split API bases:
-// - VITE_AI_API_BASE: AI consultation (OpenAI/MinIO). Defaults to legacy VITE_API_BASE, then empty (=same-origin).
-// - VITE_LOG_API_BASE: MBTI logging API (PostgreSQL). Defaults to empty (=same-origin).
-const AI_API_BASE = (import.meta.env.VITE_AI_API_BASE ?? import.meta.env.VITE_API_BASE ?? "")
-  .trim()
-  .replace(/\/$/, "");
-const LOG_API_BASE = (import.meta.env.VITE_LOG_API_BASE ?? "").trim().replace(/\/$/, "");
+// Priority:
+//  1. VITE_API_BASE (build-time) — cho deploy backend tách riêng (vd https://research.neu.edu.vn/mbti-api).
+//  2. window.__WRITE_API_BASE__ (Portal inject runtime) — chỉ dùng nếu Portal proxy hoạt động.
+//  3. "" — same-origin (dev với vite proxy /api → :4000, hoặc backend chung host với frontend).
+function getApiBase(): string {
+  const fromEnv = (import.meta.env.VITE_API_BASE ?? "").trim();
+  if (fromEnv) return fromEnv.replace(/\/+$/, "");
+  if (typeof window !== "undefined") {
+    const fromPortal = (window as { __WRITE_API_BASE__?: string }).__WRITE_API_BASE__?.trim();
+    if (fromPortal) return fromPortal.replace(/\/+$/, "");
+  }
+  return "";
+}
+const API_BASE = getApiBase();
+const ADMIN_HASH = "#/admin";
+// Khi build với pack:basepath, import.meta.env.BASE_URL = "/tuyen-sinh/embed/mbti-career-neu/"
+// Bản pack thường (relative "./"), BASE_URL = "./" → dùng "" để rút về relative.
+const BASE_URL_FOR_LINK = (() => {
+  const b = (import.meta.env.BASE_URL ?? "/").trim();
+  return b === "./" || b === "" ? "" : b;
+})();
+const ADMIN_LINK = BASE_URL_FOR_LINK + ADMIN_HASH;
 const BULLET_SECTION_KEYS = new Set(["diem_manh", "diem_yeu", "moi_truong"]);
 const QUIZ_SCALE_OPTIONS = [
   { value: 1, size: 38, color: "#8b5cf6", glow: "rgba(139, 92, 246, 0.24)", label: "Hoàn toàn không đồng ý" },
@@ -26,7 +42,9 @@ const QUIZ_SCALE_OPTIONS = [
 ] as const;
 
 export default function App() {
-  const [step, setStep] = useState<Step>("intro");
+  const [step, setStep] = useState<Step>(() =>
+    typeof window !== "undefined" && window.location.hash === ADMIN_HASH ? "admin" : "intro",
+  );
   const [answers, setAnswers] = useState<AnswerRecord>({});
   const [quizNotice, setQuizNotice] = useState<string | null>(null);
   const [showMissingState, setShowMissingState] = useState(false);
@@ -41,6 +59,22 @@ export default function App() {
       setQuizNotice(null);
     }
   }, [answeredCount]);
+
+  useEffect(() => {
+    const onHash = () => {
+      if (window.location.hash === ADMIN_HASH) setStep("admin");
+      else if (step === "admin") setStep("intro");
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, [step]);
+
+  const exitAdmin = useCallback(() => {
+    if (window.location.hash === ADMIN_HASH) {
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+    setStep("intro");
+  }, []);
 
   const scrollToQuestion = useCallback((questionId: string) => {
     const questionNode = document.getElementById(`question-${questionId}`);
@@ -71,7 +105,7 @@ export default function App() {
 
   const handleStart = useCallback(() => {
     if (!userName.trim() || !userProfileId.trim()) {
-      setQuizNotice("Vui lòng nhập đầy đủ Tên và Mã hồ sơ trước khi bắt đầu làm bài.");
+      setQuizNotice("Vui lòng nhập đầy đủ Tên và CCCD/Số báo danh/Mã hồ sơ trước khi bắt đầu làm bài.");
       return;
     }
     setStep("quiz");
@@ -105,7 +139,9 @@ export default function App() {
   const resultType = step === "result" ? computeMBTI(answers) : null;
   const resultInfo = resultType ? MBTI_TYPE_INFO[resultType] : null;
   const mainClassName =
-    step === "quiz" ? "mx-auto max-w-5xl px-4 py-8 sm:px-6" : "mx-auto max-w-4xl px-4 py-8 sm:px-6";
+    step === "quiz" || step === "admin"
+      ? "mx-auto max-w-6xl px-4 py-8 sm:px-6"
+      : "mx-auto max-w-4xl px-4 py-8 sm:px-6";
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -149,10 +185,20 @@ export default function App() {
             onRetry={handleRetry}
           />
         )}
+
+        {step === "admin" && <AdminPage onExit={exitAdmin} />}
       </main>
 
       <footer className="pb-8 text-center text-sm text-slate-500">
         Công cụ tham khảo, không thay thế tư vấn chuyên nghiệp. © NEU
+        {step !== "admin" && (
+          <>
+            {" · "}
+            <a href={ADMIN_LINK} className="text-slate-500 underline hover:text-slate-700">
+              Quản trị
+            </a>
+          </>
+        )}
       </footer>
     </div>
   );
@@ -205,17 +251,15 @@ function Intro({
           </div>
         </div>
 
-        <ul className="space-y-2 text-sm leading-6 text-slate-700">
-          <li>Chọn câu trả lời gần nhất với cách bạn thường suy nghĩ hoặc hành động.</li>
-          <li>Không có đáp án đúng hoặc sai, nên hãy trả lời trung thực và nhất quán.</li>
-          <li>Bạn chỉ xem được kết quả khi đã hoàn thành đầy đủ toàn bộ câu hỏi.</li>
-        </ul>
+        <p className="text-sm leading-6 text-slate-700">
+          Chọn đáp án gần nhất với suy nghĩ/hành động của bạn — không có đúng/sai, hãy trả lời trung thực; phải hoàn thành đủ câu hỏi mới xem được kết quả.
+        </p>
 
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Thông tin hồ sơ</p>
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
             <label className="space-y-1">
-              <span className="text-sm font-medium text-slate-700">Nhập tên</span>
+              <span className="text-sm font-medium text-slate-700">Nhập Họ và tên</span>
               <input
                 value={userName}
                 onChange={(e) => onChangeUserName(e.target.value)}
@@ -224,11 +268,11 @@ function Intro({
               />
             </label>
             <label className="space-y-1">
-              <span className="text-sm font-medium text-slate-700">Nhập CCCD, Số báo danh hoặc Mã hồ sơ</span>
+              <span className="text-sm font-medium text-slate-700">Nhập CCCD, Số báo danh hoặc mã hồ sơ</span>
               <input
                 value={userProfileId}
                 onChange={(e) => onChangeUserProfileId(e.target.value)}
-                placeholder="Ví dụ: HS00123"
+                placeholder="Ví dụ: 001203012345 hoặc HS00123"
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-indigo-200 focus:ring-2"
               />
             </label>
@@ -240,13 +284,15 @@ function Intro({
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={onStart}
-          className="inline-flex w-full items-center justify-center rounded-lg bg-indigo-600 px-5 py-3 text-base font-semibold text-white transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-white sm:w-auto"
-        >
-          Bắt đầu làm bài
-        </button>
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={onStart}
+            className="inline-flex w-full items-center justify-center rounded-lg bg-indigo-600 px-5 py-3 text-base font-semibold text-white transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-white sm:w-auto"
+          >
+            Bắt đầu
+          </button>
+        </div>
       </div>
     </section>
   );
@@ -1335,54 +1381,82 @@ function Result({
   const [consultationText, setConsultationText] = useState<string | null>(null);
   const [consultationSections, setConsultationSections] = useState<Record<string, SectionValue> | null>(null);
   const [consultationError, setConsultationError] = useState<string | null>(null);
-  const [consultationObjectName, setConsultationObjectName] = useState<string | null>(null);
-  const [consultationSource, setConsultationSource] = useState<string | null>(null);
-  const [consultationSectionsForStorage, setConsultationSectionsForStorage] = useState<any>(null);
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
-  const [savedSessionId, setSavedSessionId] = useState<number | null>(null);
-  const autoSaveOnceRef = useRef(false);
-  const autoSaveConsultationOnceRef = useRef(false);
+  const ranOnceRef = useRef(false);
 
+  // Lưu session trước → có session_id → gọi consultation kèm sessionId để backend lưu cả AI vào DB.
   useEffect(() => {
-    setConsultationLoading(true);
-    setConsultationError(null);
-    setConsultationText(null);
-    setConsultationSections(null);
-    setConsultationObjectName(null);
-    setConsultationSource(null);
-    setConsultationSectionsForStorage(null);
-    fetch(`${AI_API_BASE}/api/ai-consultation?mbtiType=${encodeURIComponent(mbtiType)}`)
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error(res.status === 404 ? "Chưa có dữ liệu tư vấn cho tính cách này." : "Tải tư vấn thất bại.");
+    if (ranOnceRef.current) return;
+    if (!userName.trim() || !userProfileId.trim()) return;
+    ranOnceRef.current = true;
+
+    const answersPayload = MBTI_QUESTIONS.map((q, idx) => ({
+      question_number: idx + 1,
+      answer_value: answers[q.id],
+    }));
+    if (answersPayload.some((a) => typeof a.answer_value !== "number")) {
+      setSaveError("Thiếu câu trả lời. Vui lòng làm lại bài trắc nghiệm.");
+      setConsultationLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const run = async () => {
+      setSaveLoading(true);
+      setSaveError(null);
+      setSaveSuccess(null);
+      let sessionId: number | null = null;
+      try {
+        const resp = await fetch(`${API_BASE}/api/mbti/sessions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            user_name: userName.trim(),
+            user_profile_id: userProfileId.trim(),
+            mbti_result: mbtiType,
+            answers: answersPayload,
+          }),
+        });
+        if (!resp.ok) {
+          const text = await resp.text().catch(() => "");
+          let msg = "Lưu kết quả thất bại.";
+          try { msg = (text ? JSON.parse(text) : null)?.error || msg; } catch { /* noop */ }
+          throw new Error(`${msg} (HTTP ${resp.status})`);
         }
-        return res.json();
-      })
-      .then((data) => {
+        const data = await resp.json().catch(() => null);
+        sessionId = data?.session?.id ?? null;
+        if (!cancelled) setSaveSuccess("Đã lưu kết quả vào cơ sở dữ liệu.");
+      } catch (e: any) {
+        if (!cancelled) setSaveError(e?.message || "Lưu kết quả thất bại.");
+      } finally {
+        if (!cancelled) setSaveLoading(false);
+      }
+
+      if (cancelled) return;
+      setConsultationLoading(true);
+      setConsultationError(null);
+      setConsultationText(null);
+      setConsultationSections(null);
+      try {
+        const url =
+          `${API_BASE}/api/ai-consultation?mbtiType=${encodeURIComponent(mbtiType)}` +
+          (sessionId ? `&sessionId=${sessionId}` : "");
+        const res = await fetch(url, { credentials: "include" });
+        if (!res.ok) {
+          throw new Error(
+            res.status === 404 ? "Chưa có dữ liệu tư vấn cho tính cách này." : "Tải tư vấn thất bại.",
+          );
+        }
+        const data = await res.json();
         const rawText: string = data.consultation ?? "";
         const sections = data.sections && typeof data.sections === "object" ? data.sections : null;
-        const objectName =
-          typeof data.objectName === "string"
-            ? data.objectName
-            : typeof data.object_name === "string"
-              ? data.object_name
-              : "";
-        const sourceTag = typeof data.sections_source === "string" ? data.sections_source : "";
-        const sectionsForStorage =
-          data.sections_for_storage && typeof data.sections_for_storage === "object"
-            ? data.sections_for_storage
-            : data.sectionsForStorage && typeof data.sectionsForStorage === "object"
-              ? data.sectionsForStorage
-              : null;
 
-        // Build normalized entries, keeping all SECTION_DEFS keys even if API missed them
         let normalizedEntries = sections
           ? Object.entries(sections).filter(([, value]) => sectionHasContent(value))
           : [];
-
-        // Client-side fallback: if some expected keys are missing, try to extract from raw text
         if (rawText) {
           const expectedKeys = ["diem_manh", "diem_yeu", "moi_truong"];
           const presentKeys = new Set(normalizedEntries.map(([k]) => k));
@@ -1394,136 +1468,28 @@ function Result({
             }
           }
         }
-
-        // Last-resort static fallback: guarantee diem_manh & diem_yeu always present
         const presentAfterFallback = new Set(normalizedEntries.map(([k]) => k));
-        const type = mbtiType as keyof typeof STATIC_DIEM_MANH;
-        if (!presentAfterFallback.has("diem_manh") && STATIC_DIEM_MANH[type]) {
-          normalizedEntries.push(["diem_manh", STATIC_DIEM_MANH[type]]);
+        const tKey = mbtiType as keyof typeof STATIC_DIEM_MANH;
+        if (!presentAfterFallback.has("diem_manh") && STATIC_DIEM_MANH[tKey]) {
+          normalizedEntries.push(["diem_manh", STATIC_DIEM_MANH[tKey]]);
         }
-        if (!presentAfterFallback.has("diem_yeu") && STATIC_DIEM_YEU[type]) {
-          normalizedEntries.push(["diem_yeu", STATIC_DIEM_YEU[type]]);
+        if (!presentAfterFallback.has("diem_yeu") && STATIC_DIEM_YEU[tKey]) {
+          normalizedEntries.push(["diem_yeu", STATIC_DIEM_YEU[tKey]]);
         }
-
+        if (cancelled) return;
         if (normalizedEntries.length) {
           setConsultationSections(Object.fromEntries(normalizedEntries) as Record<string, SectionValue>);
         }
         setConsultationText(rawText);
-        setConsultationObjectName(objectName || null);
-        setConsultationSource(sourceTag || null);
-        setConsultationSectionsForStorage(sectionsForStorage);
-      })
-      .catch((err) => {
-        setConsultationError(err.message || "Không tải được lời tư vấn.");
-      })
-      .finally(() => {
-        setConsultationLoading(false);
-      });
-  }, [mbtiType]);
-
-  const handleSaveSession = useCallback(async () => {
-    setSaveLoading(true);
-    setSaveError(null);
-    setSaveSuccess(null);
-
-    const trimmedName = userName.trim();
-    const trimmedProfile = userProfileId.trim();
-    if (!trimmedName) {
-      setSaveLoading(false);
-      setSaveError("Vui lòng nhập tên.");
-      return;
-    }
-    if (!trimmedProfile) {
-      setSaveLoading(false);
-      setSaveError("Vui lòng nhập mã hồ sơ.");
-      return;
-    }
-
-    const answersPayload = MBTI_QUESTIONS.map((q, idx) => ({
-      question_number: idx + 1,
-      answer_value: answers[q.id],
-    }));
-
-    if (answersPayload.some((a) => typeof a.answer_value !== "number")) {
-      setSaveLoading(false);
-      setSaveError("Thiếu câu trả lời. Vui lòng làm lại bài trắc nghiệm.");
-      return;
-    }
-
-    try {
-      const resp = await fetch(`${LOG_API_BASE}/api/mbti/sessions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_name: trimmedName,
-          user_profile_id: trimmedProfile,
-          mbti_result: mbtiType,
-          answers: answersPayload,
-        }),
-      });
-
-      if (!resp.ok) {
-        const text = await resp.text().catch(() => "");
-        let msg = "Lưu kết quả thất bại.";
-        try {
-          const data = text ? JSON.parse(text) : null;
-          msg = data?.error || msg;
-        } catch {
-          // ignore JSON parse error
-        }
-        throw new Error(`${msg} (HTTP ${resp.status})`);
+      } catch (err: any) {
+        if (!cancelled) setConsultationError(err?.message || "Không tải được lời tư vấn.");
+      } finally {
+        if (!cancelled) setConsultationLoading(false);
       }
-
-      const saved = await resp.json().catch(() => null);
-      const sid = Number(saved?.session?.id);
-      if (Number.isFinite(sid) && sid > 0) setSavedSessionId(sid);
-      setSaveSuccess("Đã lưu kết quả vào cơ sở dữ liệu.");
-    } catch (e: any) {
-      setSaveError(e?.message || "Lưu kết quả thất bại.");
-    } finally {
-      setSaveLoading(false);
-    }
-  }, [answers, mbtiType, userName, userProfileId]);
-
-  // Auto-save once when arriving at Result (avoid StrictMode double-call)
-  useEffect(() => {
-    if (autoSaveOnceRef.current) return;
-    if (!userName.trim() || !userProfileId.trim()) return;
-    autoSaveOnceRef.current = true;
-    void handleSaveSession();
-  }, [handleSaveSession, userName, userProfileId]);
-
-  // Auto-save AI consultation to DB once we have both sessionId + consultation content.
-  useEffect(() => {
-    if (autoSaveConsultationOnceRef.current) return;
-    if (!savedSessionId) return;
-    if (!consultationText) return;
-
-    autoSaveConsultationOnceRef.current = true;
-    void fetch(`${LOG_API_BASE}/api/ai-consultation/save`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session_id: savedSessionId,
-        mbti_result: mbtiType,
-        provider: consultationSource ? `vercel:${consultationSource}` : "vercel",
-        consultation: consultationText,
-        sections_for_storage: consultationSectionsForStorage,
-        sections: consultationSections,
-        object_name: consultationObjectName,
-      }),
-    }).catch(() => {
-      // best-effort: saving consultation should not block user flow
-    });
-  }, [
-    savedSessionId,
-    consultationText,
-    consultationSectionsForStorage,
-    consultationSections,
-    consultationObjectName,
-    consultationSource,
-    mbtiType,
-  ]);
+    };
+    void run();
+    return () => { cancelled = true; };
+  }, [mbtiType, userName, userProfileId, answers]);
 
   return (
     <div className="space-y-6">
@@ -1556,7 +1522,7 @@ function Result({
           (<strong className="font-semibold text-slate-900">{userProfileId.trim() || "—"}</strong>).
         </p>
 
-        {saveLoading && (
+        {saveLoading && !saveSuccess && !saveError && (
           <p className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-800">
             Đang lưu kết quả...
           </p>
@@ -1573,14 +1539,9 @@ function Result({
         )}
 
         {saveError && (
-          <button
-            type="button"
-            onClick={handleSaveSession}
-            disabled={saveLoading}
-            className="mt-4 inline-flex w-full items-center justify-center rounded-lg bg-emerald-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-white sm:w-auto"
-          >
-            {saveLoading ? "Đang lưu..." : "Thử lưu lại"}
-          </button>
+          <p className="mt-3 text-xs text-slate-500">
+            Có thể bấm "Làm lại bài trắc nghiệm" bên dưới để thử lưu lại.
+          </p>
         )}
       </div>
 

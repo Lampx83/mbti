@@ -166,11 +166,15 @@ async function ensureMigrations() {
         created_at      timestamptz NOT NULL DEFAULT now()
       )
     `);
-    await query(
-      `CREATE INDEX IF NOT EXISTS idx_mbti_ai_consultations_session_id ON __SCHEMA__.ai_consultations(session_id)`,
-    );
+    await query(`CREATE INDEX IF NOT EXISTS idx_mbti_ai_consultations_session_id ON __SCHEMA__.ai_consultations(session_id)`);
     console.log("[mbti-ensure-db] Migration: ai_consultations table created");
   }
+
+  // Ensure indexes for reporting/query (idempotent)
+  await query(`CREATE INDEX IF NOT EXISTS ai_consultations_sections_gin ON __SCHEMA__.ai_consultations USING GIN (sections)`);
+  await query(`CREATE INDEX IF NOT EXISTS ai_consultations_session_id_idx ON __SCHEMA__.ai_consultations (session_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS ai_consultations_created_at_idx ON __SCHEMA__.ai_consultations (created_at)`);
+  await query(`CREATE INDEX IF NOT EXISTS ai_consultations_mbti_provider_idx ON __SCHEMA__.ai_consultations (mbti_result, provider)`);
 }
 
 async function applySchema() {

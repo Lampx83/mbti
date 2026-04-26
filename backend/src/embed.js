@@ -3,7 +3,7 @@
  * Portal set PORTAL_DATABASE_URL; ta set DB_SCHEMA=mbti_career để không đụng schema ai_portal.
  */
 import express from "express";
-import { getConsultation } from "./routes/consultation.js";
+import { getConsultation, postConsultationSave } from "./routes/consultation.js";
 import { postSession } from "./routes/sessions.js";
 import {
   postAdminLogin,
@@ -35,6 +35,7 @@ export function createEmbedRouter() {
   });
 
   router.get("/api/ai-consultation", getConsultation);
+  router.post("/api/ai-consultation/save", postConsultationSave);
   router.post("/api/mbti/sessions", postSession);
 
   router.post("/api/admin/login", postAdminLogin);

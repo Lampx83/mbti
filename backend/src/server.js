@@ -9,7 +9,7 @@ import cors from "cors";
 import { PORT } from "./env.js";
 import { ensureDatabase } from "./ensure-db.js";
 import { query } from "./db.js";
-import { getConsultation } from "./routes/consultation.js";
+import { getConsultation, postConsultationSave } from "./routes/consultation.js";
 import { postSession } from "./routes/sessions.js";
 import {
   postAdminLogin,
@@ -34,6 +34,7 @@ app.get("/health", async (_req, res) => {
 });
 
 app.get("/api/ai-consultation", getConsultation);
+app.post("/api/ai-consultation/save", postConsultationSave);
 app.post("/api/mbti/sessions", postSession);
 
 app.post("/api/admin/login", postAdminLogin);

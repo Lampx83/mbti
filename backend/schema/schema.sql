@@ -48,3 +48,9 @@ CREATE TABLE IF NOT EXISTS __SCHEMA__.ai_consultations (
   created_at      timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_mbti_ai_consultations_session_id ON __SCHEMA__.ai_consultations(session_id);
+
+-- Indexes phục vụ thống kê/query nhanh (sections JSONB + lọc theo session/time/provider)
+CREATE INDEX IF NOT EXISTS ai_consultations_sections_gin ON __SCHEMA__.ai_consultations USING GIN (sections);
+CREATE INDEX IF NOT EXISTS ai_consultations_session_id_idx ON __SCHEMA__.ai_consultations (session_id);
+CREATE INDEX IF NOT EXISTS ai_consultations_created_at_idx ON __SCHEMA__.ai_consultations (created_at);
+CREATE INDEX IF NOT EXISTS ai_consultations_mbti_provider_idx ON __SCHEMA__.ai_consultations (mbti_result, provider);

@@ -38,10 +38,69 @@ async function saveConsultation(sessionId, mbtiType, provider, consultation, sec
   }
 }
 
+function normalizeMbtiType(input) {
+  const s = typeof input === "string" ? input.trim().toUpperCase() : "";
+  return MBTI_TYPES.includes(s) ? s : "";
+}
+
+/**
+ * POST /api/ai-consultation/save
+ * Nhận payload từ service AI (vd Vercel) và lưu vào DB theo schema hiện tại.
+ */
+export async function postConsultationSave(req, res) {
+  try {
+    const sessionId = Number(req.body?.session_id);
+    if (!Number.isFinite(sessionId) || sessionId <= 0) {
+      return res.status(400).json({ error: "session_id khong hop le" });
+    }
+
+    const mbtiType = normalizeMbtiType(req.body?.mbti_result || req.body?.mbtiType);
+    if (!mbtiType) {
+      return res.status(400).json({ error: "mbti_result khong hop le" });
+    }
+
+    const provider =
+      typeof req.body?.provider === "string" && req.body.provider.trim()
+        ? req.body.provider.trim()
+        : "ai:external";
+    const consultation =
+      typeof req.body?.consultation === "string" && req.body.consultation.trim()
+        ? req.body.consultation
+        : null;
+    const objectName =
+      typeof req.body?.object_name === "string" && req.body.object_name.trim()
+        ? req.body.object_name.trim()
+        : typeof req.body?.objectName === "string" && req.body.objectName.trim()
+          ? req.body.objectName.trim()
+          : null;
+
+    const pickJsonObject = (v) => {
+      if (v && typeof v === "object") return v;
+      if (typeof v === "string" && v.trim()) {
+        try { return JSON.parse(v); } catch { return null; }
+      }
+      return null;
+    };
+
+    // Prefer canonical/index payload for strong reporting (from Vercel),
+    // fallback to legacy `sections` if that's all we have.
+    const sections =
+      pickJsonObject(req.body?.sections_for_storage) ||
+      pickJsonObject(req.body?.sectionsForStorage) ||
+      pickJsonObject(req.body?.sections);
+
+    await saveConsultation(sessionId, mbtiType, provider, consultation, sections, objectName);
+    return res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error("[Consultation] save endpoint error:", err?.message || err);
+    return res.status(500).json({ error: "Loi khi luu tu van" });
+  }
+}
+
 export async function getConsultation(req, res) {
   try {
-    const mbtiType = String(req.query.mbtiType || "").toUpperCase();
-    if (!MBTI_TYPES.includes(mbtiType)) {
+    const mbtiType = normalizeMbtiType(req.query.mbtiType);
+    if (!mbtiType) {
       return res.status(400).json({ error: "mbtiType khong hop le. Can mot trong 16 loai MBTI." });
     }
     const sessionIdRaw = req.query.sessionId;

@@ -1335,16 +1335,24 @@ function Result({
   const [consultationText, setConsultationText] = useState<string | null>(null);
   const [consultationSections, setConsultationSections] = useState<Record<string, SectionValue> | null>(null);
   const [consultationError, setConsultationError] = useState<string | null>(null);
+  const [consultationObjectName, setConsultationObjectName] = useState<string | null>(null);
+  const [consultationSource, setConsultationSource] = useState<string | null>(null);
+  const [consultationSectionsForStorage, setConsultationSectionsForStorage] = useState<any>(null);
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [savedSessionId, setSavedSessionId] = useState<number | null>(null);
   const autoSaveOnceRef = useRef(false);
+  const autoSaveConsultationOnceRef = useRef(false);
 
   useEffect(() => {
     setConsultationLoading(true);
     setConsultationError(null);
     setConsultationText(null);
     setConsultationSections(null);
+    setConsultationObjectName(null);
+    setConsultationSource(null);
+    setConsultationSectionsForStorage(null);
     fetch(`${AI_API_BASE}/api/ai-consultation?mbtiType=${encodeURIComponent(mbtiType)}`)
       .then((res) => {
         if (!res.ok) {
@@ -1355,6 +1363,19 @@ function Result({
       .then((data) => {
         const rawText: string = data.consultation ?? "";
         const sections = data.sections && typeof data.sections === "object" ? data.sections : null;
+        const objectName =
+          typeof data.objectName === "string"
+            ? data.objectName
+            : typeof data.object_name === "string"
+              ? data.object_name
+              : "";
+        const sourceTag = typeof data.sections_source === "string" ? data.sections_source : "";
+        const sectionsForStorage =
+          data.sections_for_storage && typeof data.sections_for_storage === "object"
+            ? data.sections_for_storage
+            : data.sectionsForStorage && typeof data.sectionsForStorage === "object"
+              ? data.sectionsForStorage
+              : null;
 
         // Build normalized entries, keeping all SECTION_DEFS keys even if API missed them
         let normalizedEntries = sections
@@ -1388,6 +1409,9 @@ function Result({
           setConsultationSections(Object.fromEntries(normalizedEntries) as Record<string, SectionValue>);
         }
         setConsultationText(rawText);
+        setConsultationObjectName(objectName || null);
+        setConsultationSource(sourceTag || null);
+        setConsultationSectionsForStorage(sectionsForStorage);
       })
       .catch((err) => {
         setConsultationError(err.message || "Không tải được lời tư vấn.");
@@ -1450,7 +1474,9 @@ function Result({
         throw new Error(`${msg} (HTTP ${resp.status})`);
       }
 
-      await resp.json().catch(() => null);
+      const saved = await resp.json().catch(() => null);
+      const sid = Number(saved?.session?.id);
+      if (Number.isFinite(sid) && sid > 0) setSavedSessionId(sid);
       setSaveSuccess("Đã lưu kết quả vào cơ sở dữ liệu.");
     } catch (e: any) {
       setSaveError(e?.message || "Lưu kết quả thất bại.");
@@ -1466,6 +1492,38 @@ function Result({
     autoSaveOnceRef.current = true;
     void handleSaveSession();
   }, [handleSaveSession, userName, userProfileId]);
+
+  // Auto-save AI consultation to DB once we have both sessionId + consultation content.
+  useEffect(() => {
+    if (autoSaveConsultationOnceRef.current) return;
+    if (!savedSessionId) return;
+    if (!consultationText) return;
+
+    autoSaveConsultationOnceRef.current = true;
+    void fetch(`${LOG_API_BASE}/api/ai-consultation/save`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: savedSessionId,
+        mbti_result: mbtiType,
+        provider: consultationSource ? `vercel:${consultationSource}` : "vercel",
+        consultation: consultationText,
+        sections_for_storage: consultationSectionsForStorage,
+        sections: consultationSections,
+        object_name: consultationObjectName,
+      }),
+    }).catch(() => {
+      // best-effort: saving consultation should not block user flow
+    });
+  }, [
+    savedSessionId,
+    consultationText,
+    consultationSectionsForStorage,
+    consultationSections,
+    consultationObjectName,
+    consultationSource,
+    mbtiType,
+  ]);
 
   return (
     <div className="space-y-6">

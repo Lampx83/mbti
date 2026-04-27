@@ -4,7 +4,7 @@
   "name": "Trắc nghiệm MBTI – Định hướng nghề nghiệp",
   "description": "Trắc nghiệm MBTI giúp sinh viên Đại học Kinh tế Quốc dân (NEU) khám phá nhóm tính cách và gợi ý hướng nghề nghiệp, ngành học phù hợp. Lưu lịch sử người làm + lời tư vấn AI vào DB của Portal.",
   "keywords": ["MBTI", "trắc nghiệm tính cách", "định hướng nghề nghiệp", "NEU", "sinh viên kinh tế", "hướng nghiệp"],
-  "version": "1.1.4",
+  "version": "1.1.7",
   "type": "embedded",
   "hasBackend": true,
   "hasFrontendOnly": false,

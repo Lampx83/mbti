@@ -1,6 +1,6 @@
 {
   "name": "mbti-career-neu",
-  "version": "1.1.4",
+  "version": "1.1.6",
   "description": "Trắc nghiệm MBTI định hướng nghề nghiệp cho sinh viên Đại học Kinh tế Quốc dân",
   "type": "module",
   "scripts": {

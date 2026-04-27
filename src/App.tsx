@@ -1452,11 +1452,13 @@ function Result({
         // Best-effort persist: send the Vercel payload back to Portal backend for storage.
         // UI should still work even if persistence fails.
         if (sessionId) {
-          fetch(`${API_BASE}/api/mbti/sessions/${sessionId}/ai`, {
+          fetch(`${API_BASE}/api/mbti/sessions`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
             body: JSON.stringify({
+              mode: "ai_save",
+              session_id: sessionId,
               provider: data.sections_source || data.provider || "vercel",
               mbtiType: mbtiType,
               consultation: rawText || null,

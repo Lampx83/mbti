@@ -1449,30 +1449,57 @@ function Result({
               ? data.sectionsForStorage
               : sections;
 
-        // Best-effort persist: send the Vercel payload back to Portal backend for storage.
+        // Best-effort persist:
+        // - Prefer dedicated endpoint: POST /api/ai-consultation/save (PUT semantics + session existence check)
+        // - Fallback to legacy allowlist workaround: POST /api/mbti/sessions?mode=ai_save
         // UI should still work even if persistence fails.
         if (sessionId) {
-          fetch(`${API_BASE}/api/mbti/sessions?mode=ai_save`, {
+          const provider = data.sections_source || data.provider || "vercel";
+          const objectName = data.objectName || data.object_name || null;
+
+          const savePayload = {
+            session_id: sessionId,
+            mbti_result: mbtiType,
+            mbtiType: mbtiType,
+            provider,
+            consultation: rawText || null,
+            object_name: objectName,
+            objectName,
+            sections_for_storage: sectionsForStorage,
+            sectionsForStorage,
+            sections,
+          };
+
+          // 1) Prefer endpoint #8
+          fetch(`${API_BASE}/api/ai-consultation/save`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
-            body: JSON.stringify({
-              mode: "ai_save",
-              session_id: sessionId,
-              // Include required fields (keep Portal allowlist/validation happy).
-              user_name: userName.trim(),
-              user_profile_id: userProfileId.trim(),
-              mbti_result: mbtiType,
-              answers: answersPayload,
-              provider: data.sections_source || data.provider || "vercel",
-              mbtiType: mbtiType,
-              consultation: rawText || null,
-              objectName: data.objectName || data.object_name || null,
-              sections_for_storage: sectionsForStorage,
-            }),
-          }).catch(() => {
-            // ignore persistence errors – consultation is still shown to the user
-          });
+            body: JSON.stringify(savePayload),
+          })
+            .then((resp) => {
+              // If the Portal/router blocks this endpoint, fallback to legacy route.
+              if (resp.status === 404 || resp.status === 405) {
+                return fetch(`${API_BASE}/api/mbti/sessions?mode=ai_save`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  credentials: "include",
+                  body: JSON.stringify({
+                    ...savePayload,
+                    mode: "ai_save",
+                    // Include required fields (keep Portal allowlist/validation happy).
+                    user_name: userName.trim(),
+                    user_profile_id: userProfileId.trim(),
+                    mbti_result: mbtiType,
+                    answers: answersPayload,
+                  }),
+                });
+              }
+              return null;
+            })
+            .catch(() => {
+              // ignore persistence errors – consultation is still shown to the user
+            });
         }
 
         let normalizedEntries = sections

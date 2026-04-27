@@ -38,6 +38,70 @@ async function saveConsultation(sessionId, mbtiType, provider, consultation, sec
   }
 }
 
+async function ensureSessionExists(sessionId) {
+  const out = await query(
+    `SELECT 1
+       FROM __SCHEMA__.mbti_sessions
+      WHERE id = $1
+      LIMIT 1`,
+    [sessionId],
+  );
+  return out.rowCount > 0;
+}
+
+/**
+ * "PUT semantics" for consultation save:
+ * - If the session already has an ai_consultations row: update the latest one.
+ * - Else: insert a new row.
+ *
+ * This avoids unbounded row growth from repeated external callbacks.
+ * Throws on DB errors so caller can return non-2xx.
+ */
+async function putConsultation(sessionId, mbtiType, provider, consultation, sections, objectName) {
+  const latest = await query(
+    `SELECT id
+       FROM __SCHEMA__.ai_consultations
+      WHERE session_id = $1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+    [sessionId],
+  );
+
+  const payload = [
+    sessionId,
+    mbtiType,
+    provider || "none",
+    consultation || null,
+    sections ? JSON.stringify(sections) : null,
+    objectName || null,
+  ];
+
+  if (latest.rows[0]?.id) {
+    await query(
+      `UPDATE __SCHEMA__.ai_consultations
+          SET session_id = $1,
+              mbti_result = $2,
+              provider = $3,
+              consultation = $4,
+              sections = $5::jsonb,
+              object_name = $6,
+              created_at = now()
+        WHERE id = $7`,
+      [...payload, latest.rows[0].id],
+    );
+    return { mode: "update", id: latest.rows[0].id };
+  }
+
+  const ins = await query(
+    `INSERT INTO __SCHEMA__.ai_consultations
+      (session_id, mbti_result, provider, consultation, sections, object_name)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+     RETURNING id`,
+    payload,
+  );
+  return { mode: "insert", id: ins.rows[0]?.id ?? null };
+}
+
 function normalizeMbtiType(input) {
   const s = typeof input === "string" ? input.trim().toUpperCase() : "";
   return MBTI_TYPES.includes(s) ? s : "";
@@ -52,6 +116,11 @@ export async function postConsultationSave(req, res) {
     const sessionId = Number(req.body?.session_id);
     if (!Number.isFinite(sessionId) || sessionId <= 0) {
       return res.status(400).json({ error: "session_id khong hop le" });
+    }
+
+    const sessionExists = await ensureSessionExists(sessionId);
+    if (!sessionExists) {
+      return res.status(404).json({ error: "Khong tim thay session" });
     }
 
     const mbtiType = normalizeMbtiType(req.body?.mbti_result || req.body?.mbtiType);
@@ -89,8 +158,10 @@ export async function postConsultationSave(req, res) {
       pickJsonObject(req.body?.sectionsForStorage) ||
       pickJsonObject(req.body?.sections);
 
-    await saveConsultation(sessionId, mbtiType, provider, consultation, sections, objectName);
-    return res.status(201).json({ ok: true });
+    const result = await putConsultation(sessionId, mbtiType, provider, consultation, sections, objectName);
+    // Backward-compatible success status (previously always 201).
+    // Now we only return 201 when the DB write actually succeeded.
+    return res.status(201).json({ ok: true, mode: result.mode, id: result.id });
   } catch (err) {
     console.error("[Consultation] save endpoint error:", err?.message || err);
     return res.status(500).json({ error: "Loi khi luu tu van" });

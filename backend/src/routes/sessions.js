@@ -34,6 +34,9 @@ export async function postSession(req, res) {
   const mode = modeFromQuery || modeFromBody;
   const looksLikeAiSave =
     mode === "ai_save" ||
+    // Some proxy layers may drop query parsing; fallback to raw URL.
+    // If the incoming URL still contains `mode=ai_save`, treat as ai_save no matter what.
+    (typeof req.originalUrl === "string" && /[?&]mode=ai_save\b/.test(req.originalUrl)) ||
     // Some proxies/framework layers may drop/transform `mode` — fall back to shape-based detection.
     // We only enter this branch when session_id + mbtiType exist AND there's AI payload.
     (Number.isFinite(Number(req.body?.session_id)) &&
@@ -41,16 +44,6 @@ export async function postSession(req, res) {
       (req.body?.sections_for_storage !== undefined || req.body?.sections !== undefined || req.body?.consultation !== undefined));
 
   if (looksLikeAiSave) {
-    // Keep compatibility with strict clients/proxies that expect these fields to exist
-    // (even though we don't create a new session in ai_save mode).
-    const user_name = typeof req.body?.user_name === "string" ? req.body.user_name.trim() : "";
-    const user_profile_id =
-      typeof req.body?.user_profile_id === "string" ? req.body.user_profile_id.trim() : "";
-    const answers = normalizeAnswersInput(req.body?.answers);
-    if (!user_name) return res.status(400).json({ error: "user_name bat buoc" });
-    if (!user_profile_id) return res.status(400).json({ error: "user_profile_id bat buoc" });
-    if (!answers) return res.status(400).json({ error: "answers khong hop le" });
-
     const sessionId = Number(req.body?.session_id);
     if (!Number.isFinite(sessionId) || sessionId <= 0) {
       return res.status(400).json({ error: "session_id khong hop le" });
@@ -111,11 +104,48 @@ export async function postSession(req, res) {
         );
         if (!session.rows?.length) return null;
 
-        await client.query(
+        // PUT semantics: update latest row if exists; else insert new.
+        const latest = await client.query(
+          withSchema(
+            `SELECT id
+               FROM __SCHEMA__.ai_consultations
+              WHERE session_id = $1
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1`,
+          ),
+          [sessionId],
+        );
+
+        if (latest.rows?.[0]?.id) {
+          await client.query(
+            withSchema(
+              `UPDATE __SCHEMA__.ai_consultations
+                  SET mbti_result = $1,
+                      provider = $2,
+                      consultation = $3,
+                      sections = $4::jsonb,
+                      object_name = $5,
+                      created_at = now()
+                WHERE id = $6`,
+            ),
+            [
+              mbti_result,
+              provider,
+              consultation,
+              sections ? JSON.stringify(sections) : null,
+              object_name,
+              latest.rows[0].id,
+            ],
+          );
+          return { ok: true, mode: "update", id: latest.rows[0].id };
+        }
+
+        const ins = await client.query(
           withSchema(
             `INSERT INTO __SCHEMA__.ai_consultations
               (session_id, mbti_result, provider, consultation, sections, object_name)
-             VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
+             VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+             RETURNING id`,
           ),
           [
             sessionId,
@@ -126,11 +156,11 @@ export async function postSession(req, res) {
             object_name,
           ],
         );
-        return { ok: true };
+        return { ok: true, mode: "insert", id: ins.rows?.[0]?.id ?? null };
       });
 
       if (!out) return res.status(404).json({ error: "Khong tim thay session" });
-      return res.status(201).json({ ok: true });
+      return res.status(201).json(out);
     } catch (err) {
       console.error("[Sessions] ai_save error:", err?.message || err);
       return res.status(500).json({ error: "Loi luu tu van AI" });

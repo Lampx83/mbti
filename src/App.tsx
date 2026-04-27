@@ -1373,7 +1373,10 @@ function Result({
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const ranOnceRef = useRef(false);
 
-  // Lưu session trước → có session_id → gọi consultation kèm sessionId để backend lưu cả AI vào DB.
+  // Best effort:
+  // - Ưu tiên gọi Vercel (AI_BASE) để hiển thị tư vấn ổn định trên UI.
+  // - Sau đó POST /api/mbti/sessions một lần để lưu bài làm (kèm AI nếu có).
+  // - Nếu Vercel fail/timeout: vẫn POST lưu bài làm nhưng không có AI.
   useEffect(() => {
     if (ranOnceRef.current) return;
     if (!userName.trim() || !userProfileId.trim()) return;
@@ -1391,131 +1394,50 @@ function Result({
 
     let cancelled = false;
     const run = async () => {
-      setSaveLoading(true);
-      setSaveError(null);
-      setSaveSuccess(null);
-      let sessionId: number | null = null;
-      try {
-        const resp = await fetch(`${API_BASE}/api/mbti/sessions`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            user_name: userName.trim(),
-            user_profile_id: userProfileId.trim(),
-            mbti_result: mbtiType,
-            answers: answersPayload,
-          }),
-        });
-        if (!resp.ok) {
-          const text = await resp.text().catch(() => "");
-          let msg = "Lưu kết quả thất bại.";
-          try { msg = (text ? JSON.parse(text) : null)?.error || msg; } catch { /* noop */ }
-          throw new Error(`${msg} (HTTP ${resp.status})`);
-        }
-        const data = await resp.json().catch(() => null);
-        sessionId = data?.session?.id ?? null;
-        if (!cancelled) setSaveSuccess("Đã lưu kết quả vào cơ sở dữ liệu.");
-      } catch (e: any) {
-        if (!cancelled) setSaveError(e?.message || "Lưu kết quả thất bại.");
-      } finally {
-        if (!cancelled) setSaveLoading(false);
-      }
-
-      if (cancelled) return;
       setConsultationLoading(true);
       setConsultationError(null);
       setConsultationText(null);
       setConsultationSections(null);
+      // 1) Fetch Vercel first (UI stability)
+      let aiData: any = null;
       try {
-        // Preferred path: call our backend so it can persist consultation to DB.
-        // Best-effort fallback: if backend fails, call AI_BASE directly (e.g. Vercel)
-        // to still show consultation on UI.
-        const backendUrl =
-          `${API_BASE}/api/ai-consultation?mbtiType=${encodeURIComponent(mbtiType)}` +
-          (sessionId ? `&sessionId=${sessionId}` : "");
-
-        let data: any = null;
+        const url = `${AI_BASE}/api/ai-consultation?mbtiType=${encodeURIComponent(mbtiType)}`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 18000);
+        let res: Response;
         try {
-          const res = await fetch(backendUrl, { credentials: "include" });
-          if (!res.ok) {
-            throw new Error(
-              res.status === 404 ? "Chưa có dữ liệu tư vấn cho tính cách này." : "Tải tư vấn thất bại.",
-            );
-          }
-          data = await res.json();
-        } catch (backendErr) {
-          // Fallback (no credentials for cross-site AI calls).
-          const fallbackUrl = `${AI_BASE}/api/ai-consultation?mbtiType=${encodeURIComponent(mbtiType)}`;
-          const res = await fetch(fallbackUrl);
-          if (!res.ok) {
-            throw backendErr;
-          }
-          data = await res.json();
+          res = await fetch(url, { signal: controller.signal });
+        } finally {
+          clearTimeout(timeout);
         }
 
-        const rawText: string = data.consultation ?? "";
-        const sections = data.sections && typeof data.sections === "object" ? data.sections : null;
-        const sectionsForStorage =
-          data.sections_for_storage && typeof data.sections_for_storage === "object"
-            ? data.sections_for_storage
-            : data.sectionsForStorage && typeof data.sectionsForStorage === "object"
-              ? data.sectionsForStorage
-              : sections;
-
-        // Best-effort persist:
-        // - Prefer dedicated endpoint: POST /api/ai-consultation/save (PUT semantics + session existence check)
-        // - Fallback to legacy allowlist workaround: POST /api/mbti/sessions?mode=ai_save
-        // UI should still work even if persistence fails.
-        if (sessionId) {
-          const provider = data.sections_source || data.provider || "vercel";
-          const objectName = data.objectName || data.object_name || null;
-
-          const savePayload = {
-            session_id: sessionId,
-            mbti_result: mbtiType,
-            mbtiType: mbtiType,
-            provider,
-            consultation: rawText || null,
-            object_name: objectName,
-            objectName,
-            sections_for_storage: sectionsForStorage,
-            sectionsForStorage,
-            sections,
-          };
-
-          // 1) Prefer endpoint #8
-          fetch(`${API_BASE}/api/ai-consultation/save`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify(savePayload),
-          })
-            .then((resp) => {
-              // If the Portal/router blocks this endpoint, fallback to legacy route.
-              if (resp.status === 404 || resp.status === 405) {
-                return fetch(`${API_BASE}/api/mbti/sessions?mode=ai_save`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  credentials: "include",
-                  body: JSON.stringify({
-                    ...savePayload,
-                    mode: "ai_save",
-                    // Include required fields (keep Portal allowlist/validation happy).
-                    user_name: userName.trim(),
-                    user_profile_id: userProfileId.trim(),
-                    mbti_result: mbtiType,
-                    answers: answersPayload,
-                  }),
-                });
-              }
-              return null;
-            })
-            .catch(() => {
-              // ignore persistence errors – consultation is still shown to the user
-            });
+        if (!res.ok) {
+          throw new Error(
+            res.status === 404 ? "Chưa có dữ liệu tư vấn cho tính cách này." : "Tải tư vấn thất bại.",
+          );
         }
+        aiData = await res.json();
+      } catch (err: any) {
+        if (!cancelled) setConsultationError(err?.message || "Không tải được lời tư vấn.");
+      } finally {
+        if (!cancelled) setConsultationLoading(false);
+      }
 
+      if (cancelled) return;
+
+      // Update UI from AI response if available
+      const rawText: string = aiData?.consultation ?? "";
+      const sections = aiData?.sections && typeof aiData.sections === "object" ? aiData.sections : null;
+      // Canonical storage contract: always construct sections_for_storage for backend persistence.
+      // Prefer Vercel-provided `sections_for_storage` / `sectionsForStorage`, else fall back to `sections`.
+      const sectionsForStorage =
+        aiData?.sections_for_storage && typeof aiData.sections_for_storage === "object"
+          ? aiData.sections_for_storage
+          : aiData?.sectionsForStorage && typeof aiData.sectionsForStorage === "object"
+            ? aiData.sectionsForStorage
+            : sections;
+
+      if (rawText || sections) {
         let normalizedEntries = sections
           ? Object.entries(sections).filter(([, value]) => sectionHasContent(value))
           : [];
@@ -1538,15 +1460,53 @@ function Result({
         if (!presentAfterFallback.has("diem_yeu") && STATIC_DIEM_YEU[tKey]) {
           normalizedEntries.push(["diem_yeu", STATIC_DIEM_YEU[tKey]]);
         }
-        if (cancelled) return;
+
         if (normalizedEntries.length) {
           setConsultationSections(Object.fromEntries(normalizedEntries) as Record<string, SectionValue>);
         }
         setConsultationText(rawText);
-      } catch (err: any) {
-        if (!cancelled) setConsultationError(err?.message || "Không tải được lời tư vấn.");
+      }
+
+      // 2) POST once to save session (+ AI if any)
+      setSaveLoading(true);
+      setSaveError(null);
+      setSaveSuccess(null);
+      try {
+        // Keep provider stable for reporting.
+        const providerRaw = aiData?.sections_source || aiData?.provider || "vercel";
+        const objectName = aiData?.objectName || aiData?.object_name || null;
+        const resp = await fetch(`${API_BASE}/api/mbti/sessions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            user_name: userName.trim(),
+            user_profile_id: userProfileId.trim(),
+            mbti_result: mbtiType,
+            answers: answersPayload,
+            // Optional AI payload (backend should ignore if missing/invalid)
+            provider: providerRaw,
+            consultation: rawText || null,
+            object_name: objectName,
+            objectName,
+            // Storage payload: only this is required for persistence.
+            sections_for_storage: sectionsForStorage,
+            // keep legacy aliases for maximum compatibility
+            sectionsForStorage: sectionsForStorage,
+            sections,
+          }),
+        });
+        if (!resp.ok) {
+          const text = await resp.text().catch(() => "");
+          let msg = "Lưu kết quả thất bại.";
+          try { msg = (text ? JSON.parse(text) : null)?.error || msg; } catch { /* noop */ }
+          throw new Error(`${msg} (HTTP ${resp.status})`);
+        }
+        if (!cancelled) setSaveSuccess("Đã lưu kết quả vào cơ sở dữ liệu.");
+      } catch (e: any) {
+        if (!cancelled) setSaveError(e?.message || "Lưu kết quả thất bại.");
       } finally {
-        if (!cancelled) setConsultationLoading(false);
+        if (!cancelled) setSaveLoading(false);
       }
     };
     void run();

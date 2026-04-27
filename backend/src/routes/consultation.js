@@ -18,6 +18,22 @@ export const MBTI_TYPES = [
   "ISTP", "ISFP", "ESTP", "ESFP",
 ];
 
+const PROVIDER_ALLOWED = new Set(["vercel", "heuristic", "openai", "ollama", "external"]);
+
+function normalizeProvider(input) {
+  const raw = typeof input === "string" ? input.trim() : "";
+  const s = raw.toLowerCase();
+  if (!s) return "vercel";
+  if (s === "vercel") return "vercel";
+  if (s === "heuristic") return "heuristic";
+  if (s === "openai" || s === "ai:openai") return "openai";
+  if (s === "ollama" || s === "ai:ollama") return "ollama";
+  if (s === "external" || s === "ai:external") return "external";
+  if (s.startsWith("ai:openai")) return "openai";
+  if (s.startsWith("ai:ollama")) return "ollama";
+  return "external";
+}
+
 async function saveConsultation(sessionId, mbtiType, provider, consultation, sections, objectName) {
   if (!sessionId) return;
   try {
@@ -159,10 +175,14 @@ export async function postConsultationSave(req, res) {
       return res.status(400).json({ error: "mbti_result khong hop le" });
     }
 
-    const provider =
+    const providerCandidate =
       typeof req.body?.provider === "string" && req.body.provider.trim()
         ? req.body.provider.trim()
         : "ai:external";
+    const provider = normalizeProvider(providerCandidate);
+    if (!PROVIDER_ALLOWED.has(provider)) {
+      return res.status(400).json({ error: "provider khong hop le" });
+    }
     const consultation =
       typeof req.body?.consultation === "string" && req.body.consultation.trim()
         ? req.body.consultation
@@ -182,12 +202,13 @@ export async function postConsultationSave(req, res) {
       return null;
     };
 
-    // Prefer canonical/index payload for strong reporting (from Vercel),
-    // fallback to legacy `sections` if that's all we have.
+    // Strong contract: chỉ nhận canonical payload `sections_for_storage` (hoặc alias camelCase).
     const sections =
       pickJsonObject(req.body?.sections_for_storage) ||
-      pickJsonObject(req.body?.sectionsForStorage) ||
-      pickJsonObject(req.body?.sections);
+      pickJsonObject(req.body?.sectionsForStorage);
+    if (!sections) {
+      return res.status(400).json({ error: "Thieu sections_for_storage" });
+    }
 
     const result = await putConsultation(sessionId, mbtiType, provider, consultation, sections, objectName);
     // Backward-compatible success status (previously always 201).
@@ -223,10 +244,11 @@ export async function getConsultation(req, res) {
             ? ext.sectionsForStorage
             : sections;
 
-      const provider =
+      const providerCandidate =
         (typeof ext?.sections_source === "string" && ext.sections_source.trim()) ||
         (typeof ext?.provider === "string" && ext.provider.trim()) ||
         "vercel";
+      const provider = normalizeProvider(providerCandidate);
       const objectName =
         (typeof ext?.objectName === "string" && ext.objectName.trim()) ||
         (typeof ext?.object_name === "string" && ext.object_name.trim()) ||

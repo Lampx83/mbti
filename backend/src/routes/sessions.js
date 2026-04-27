@@ -26,6 +26,69 @@ function normalizeAnswersInput(answers) {
   return normalized.length ? normalized : null;
 }
 
+function pickJsonObject(v) {
+  if (v && typeof v === "object") return v;
+  if (typeof v === "string" && v.trim()) {
+    try { return JSON.parse(v); } catch { return null; }
+  }
+  return null;
+}
+
+const PROVIDER_ALLOWED = new Set(["vercel", "heuristic", "openai", "ollama", "external"]);
+
+function normalizeProvider(input) {
+  const raw = typeof input === "string" ? input.trim() : "";
+  const s = raw.toLowerCase();
+  if (!s) return "vercel";
+  if (s === "vercel") return "vercel";
+  if (s === "heuristic") return "heuristic";
+  if (s === "openai" || s === "ai:openai") return "openai";
+  if (s === "ollama" || s === "ai:ollama") return "ollama";
+  if (s === "external" || s === "ai:external") return "external";
+  // Handle pattern like "ai:gpt-4o-mini" → treat as openai
+  if (s.startsWith("ai:openai")) return "openai";
+  if (s.startsWith("ai:ollama")) return "ollama";
+  // Unknown tags (e.g. "ai:gpt-4o-mini") → external (safe bucket for reporting)
+  return "external";
+}
+
+function extractOptionalAiPayload(body) {
+  const src = body?.ai_consultation && typeof body.ai_consultation === "object" ? body.ai_consultation : body;
+  if (!src || typeof src !== "object") return null;
+
+  const providerCandidate =
+    typeof src?.provider === "string" && src.provider.trim()
+      ? src.provider.trim()
+      : typeof src?.sections_source === "string" && src.sections_source.trim()
+        ? src.sections_source.trim()
+        : "vercel";
+  const provider = normalizeProvider(providerCandidate);
+  if (!PROVIDER_ALLOWED.has(provider)) return null;
+
+  const consultation =
+    typeof src?.consultation === "string" && src.consultation.trim()
+      ? src.consultation
+      : null;
+
+  const object_name =
+    typeof src?.objectName === "string" && src.objectName.trim()
+      ? src.objectName.trim()
+      : typeof src?.object_name === "string" && src.object_name.trim()
+        ? src.object_name.trim()
+        : null;
+
+  // Strong contract: chỉ nhận canonical payload `sections_for_storage` (hoặc alias camelCase).
+  // Không dùng `sections` để lưu DB để tránh mismatch/thiếu khóa cho báo cáo.
+  const sections =
+    pickJsonObject(src?.sections_for_storage) ||
+    pickJsonObject(src?.sectionsForStorage) ||
+    null;
+
+  // Data policy: bắt buộc phải có sections_for_storage khi lưu DB.
+  if (!sections) return null;
+  return { provider, consultation, object_name, sections };
+}
+
 export async function postSession(req, res) {
   // Optional mode: save AI consultation (no session/answers creation).
   // This is designed to work with Portal allowlists that only forward POST /api/mbti/sessions.
@@ -77,14 +140,6 @@ export async function postSession(req, res) {
         : typeof req.body?.object_name === "string" && req.body.object_name.trim()
           ? req.body.object_name.trim()
           : null;
-
-    const pickJsonObject = (v) => {
-      if (v && typeof v === "object") return v;
-      if (typeof v === "string" && v.trim()) {
-        try { return JSON.parse(v); } catch { return null; }
-      }
-      return null;
-    };
 
     const sections =
       pickJsonObject(req.body?.sections_for_storage) ||
@@ -172,6 +227,7 @@ export async function postSession(req, res) {
     typeof req.body?.user_profile_id === "string" ? req.body.user_profile_id.trim() : "";
   const mbti_result = typeof req.body?.mbti_result === "string" ? req.body.mbti_result.trim().toUpperCase() : "";
   const answers = normalizeAnswersInput(req.body?.answers);
+  const optionalAi = extractOptionalAiPayload(req.body);
 
   if (!user_name) return res.status(400).json({ error: "user_name bat buoc" });
   if (!user_profile_id) return res.status(400).json({ error: "user_profile_id bat buoc" });
@@ -204,10 +260,90 @@ export async function postSession(req, res) {
         ),
         params,
       );
-      return session;
+
+      // Optional: persist AI consultation together with the session.
+      // Best-effort: do not fail the whole request if AI payload is malformed.
+      let ai_saved = false;
+      let ai_id = null;
+      if (optionalAi) {
+        try {
+          // PUT semantics: update latest row if exists; else insert new.
+          const latest = await client.query(
+            withSchema(
+              `SELECT id
+                 FROM __SCHEMA__.ai_consultations
+                WHERE session_id = $1
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1`,
+            ),
+            [session.id],
+          );
+
+          const sectionsJson = optionalAi.sections ? JSON.stringify(optionalAi.sections) : null;
+
+          if (latest.rows?.[0]?.id) {
+            const upd = await client.query(
+              withSchema(
+                `UPDATE __SCHEMA__.ai_consultations
+                    SET mbti_result = $1,
+                        provider = $2,
+                        consultation = $3,
+                        sections = $4::jsonb,
+                        object_name = $5,
+                        created_at = now()
+                  WHERE id = $6
+                  RETURNING id`,
+              ),
+              [
+                mbti_result,
+                optionalAi.provider,
+                optionalAi.consultation,
+                sectionsJson,
+                optionalAi.object_name,
+                latest.rows[0].id,
+              ],
+            );
+            ai_saved = true;
+            ai_id = upd.rows?.[0]?.id ?? latest.rows[0].id;
+          } else {
+            const ins = await client.query(
+              withSchema(
+                `INSERT INTO __SCHEMA__.ai_consultations
+                  (session_id, mbti_result, provider, consultation, sections, object_name)
+                 VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+                 RETURNING id`,
+              ),
+              [
+                session.id,
+                mbti_result,
+                optionalAi.provider,
+                optionalAi.consultation,
+                sectionsJson,
+                optionalAi.object_name,
+              ],
+            );
+            ai_saved = true;
+            ai_id = ins.rows?.[0]?.id ?? null;
+          }
+        } catch (err) {
+          // Keep request successful (session is saved), but log details for debugging.
+          console.error("[Sessions] optional AI save failed:", {
+            message: err?.message || String(err),
+            code: err?.code,
+            detail: err?.detail,
+            constraint: err?.constraint,
+          });
+        }
+      }
+      return { session, ai_saved, ai_id };
     });
 
-    return res.status(201).json({ session: out, answers_saved: answers.length });
+    return res.status(201).json({
+      session: out.session,
+      answers_saved: answers.length,
+      ai_consultation_saved: out.ai_saved,
+      ai_consultation_id: out.ai_id,
+    });
   } catch (err) {
     console.error("[Sessions] save error:", err?.message || err);
     return res.status(500).json({ error: "Loi luu ket qua MBTI" });

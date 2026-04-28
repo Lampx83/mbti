@@ -326,7 +326,8 @@ function Quiz({
           </div>
         </div>
 
-        {/* ⚠️ DEV ONLY – XÓA TRƯỚC KHI DEPLOY: nút random fill để test nhanh */}
+        
+        {/* ⚠️ DEV ONLY – XÓA TRƯỚC KHI DEPLOY: nút random fill để test nhanh 
         <div className="mt-4 flex items-center gap-2 rounded-lg border border-dashed border-orange-300 bg-orange-50 px-4 py-3">
           <span className="text-xs font-semibold text-orange-600">🧪 Chế độ thử nghiệm</span>
           <button
@@ -337,7 +338,7 @@ function Quiz({
             Random 20 câu
           </button>
         </div>
-        {/* ⚠️ DEV ONLY – XÓA TRƯỚC KHI DEPLOY: nút random fill để test nhanh */}
+        {/* ⚠️ DEV ONLY – XÓA TRƯỚC KHI DEPLOY: nút random fill để test nhanh*/}
 
         <div className="mt-5">
           <div className="flex items-center justify-between text-sm font-medium text-slate-600">

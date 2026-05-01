@@ -21,7 +21,7 @@ import { execSync } from "child_process";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
-const isBasepathPack = process.env.PACK_BASEPATH === "1" || process.env.PACK_BASEPATH === "true";
+const isBasepathPack = process.argv.includes("--basepath") || process.env.PACK_BASEPATH === "1" || process.env.PACK_BASEPATH === "true";
 
 const frontendDir = path.join(root, isBasepathPack ? "dist-base" : "dist-public");
 const backendDir = path.join(root, "backend");

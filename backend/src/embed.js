@@ -2,9 +2,10 @@
  * Entry cho AI Portal: mount router dùng DB của Portal, schema riêng mbti_career.
  * Portal set PORTAL_DATABASE_URL; ta set DB_SCHEMA=mbti_career để không đụng schema ai_portal.
  */
+import cors from 'cors';
 import express from "express";
 import { getConsultation, postConsultationSave } from "./routes/consultation.js";
-import { postSession } from "./routes/sessions.js";
+import { postSession, postSessionAI } from "./routes/sessions.js";
 import {
   postAdminLogin,
   getAdminStats,
@@ -20,6 +21,19 @@ process.env.RUN_MODE = "embedded";
 
 export function createEmbedRouter() {
   const router = express.Router({ mergeParams: true });
+  
+  // ✅ Thêm CORS middleware trước các routes
+  router.use(cors({
+    origin:[
+    'https://mbti-career-neu.vercel.app',  // Frontend Vercel
+    'http://localhost:3000',                 // Dev local
+    'http://localhost:5173'                   // Vite dev
+    ],  // hoặc whitelist domain cụ thể
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  }));
+  
   router.use(express.json({ limit: "2mb" }));
 
   router.get("/", (_req, res) => {
@@ -37,6 +51,7 @@ export function createEmbedRouter() {
   router.get("/api/ai-consultation", getConsultation);
   router.post("/api/ai-consultation/save", postConsultationSave);
   router.post("/api/mbti/sessions", postSession);
+  router.post("/api/mbti/sessions/:id/ai", postSessionAI);
 
   router.post("/api/admin/login", postAdminLogin);
   router.get("/api/admin/stats", requireAdmin, getAdminStats);

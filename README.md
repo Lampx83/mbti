@@ -1,3 +1,5 @@
+Có thể nếu portal forward được POST /api/ai-consultation/save (endpoint lấy tư vấn AI từ nguồn khác) thì sẽ không bị 404 (?)
+
 # Trắc nghiệm MBTI – Định hướng nghề nghiệp | NEU
 
 Công cụ trắc nghiệm MBTI cho sinh viên **Đại học Kinh tế Quốc dân (NEU)**, gợi ý nhóm tính cách + ngành/nghề phù hợp. Có **backend Express + PostgreSQL** lưu lịch sử bài làm và lời tư vấn AI; có **trang quản trị** xem trực quan hoá và xuất CSV.

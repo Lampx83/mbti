@@ -1,16 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { MBTI_TYPE_INFO } from "./mbti-data";
+import { API_BASE } from "./config/env";
 
-function getApiBase(): string {
-  const fromEnv = (import.meta.env.VITE_API_BASE ?? "").trim();
-  if (fromEnv) return fromEnv.replace(/\/+$/, "");
-  if (typeof window !== "undefined") {
-    const fromPortal = (window as { __WRITE_API_BASE__?: string }).__WRITE_API_BASE__?.trim();
-    if (fromPortal) return fromPortal.replace(/\/+$/, "");
-  }
-  return "";
-}
-const API_BASE = getApiBase();
 const TOKEN_KEY = "mbti_admin_token";
 
 type SessionRow = {

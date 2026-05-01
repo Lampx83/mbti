@@ -3,25 +3,12 @@ import { MBTI_QUESTIONS, MBTI_TYPE_INFO } from "./mbti-data";
 import type { MBTIQuestion } from "./mbti-data";
 import { computeMBTI, computeMBTIScores, type AnswerRecord } from "./mbti-score";
 import AdminPage from "./admin";
+import { API_BASE, AI_BASE } from "./config/env";
 
 type Step = "intro" | "quiz" | "result" | "admin";
 type SectionValue = string | string[];
 
 const totalQuestions = MBTI_QUESTIONS.length;
-// Priority:
-//  1. VITE_API_BASE (build-time) — cho deploy backend tách riêng (vd https://research.neu.edu.vn/mbti-api).
-//  2. window.__WRITE_API_BASE__ (Portal inject runtime) — chỉ dùng nếu Portal proxy hoạt động.
-//  3. "" — same-origin (dev với vite proxy /api → :4000, hoặc backend chung host với frontend).
-function getApiBase(): string {
-  const fromEnv = (import.meta.env.VITE_API_BASE ?? "").trim();
-  if (fromEnv) return fromEnv.replace(/\/+$/, "");
-  if (typeof window !== "undefined") {
-    const fromPortal = (window as { __WRITE_API_BASE__?: string }).__WRITE_API_BASE__?.trim();
-    if (fromPortal) return fromPortal.replace(/\/+$/, "");
-  }
-  return "";
-}
-const API_BASE = getApiBase();
 const ADMIN_HASH = "#/admin";
 // Khi build với pack:basepath, import.meta.env.BASE_URL = "/tuyen-sinh/embed/mbti-career-neu/"
 // Bản pack thường (relative "./"), BASE_URL = "./" → dùng "" để rút về relative.
@@ -1442,9 +1429,11 @@ function Result({
       setConsultationSections(null);
       try {
         const url =
-          `${API_BASE}/api/ai-consultation?mbtiType=${encodeURIComponent(mbtiType)}` +
+          `${AI_BASE}/api/ai-consultation?mbtiType=${encodeURIComponent(mbtiType)}` +
           (sessionId ? `&sessionId=${sessionId}` : "");
-        const res = await fetch(url, { credentials: "include" });
+        // Vercel returns `Access-Control-Allow-Origin: *` (no credentials),
+        // so we must not send cookies/credentials for cross-site AI calls.
+        const res = await fetch(url);
         if (!res.ok) {
           throw new Error(
             res.status === 404 ? "Chưa có dữ liệu tư vấn cho tính cách này." : "Tải tư vấn thất bại.",
@@ -1453,6 +1442,65 @@ function Result({
         const data = await res.json();
         const rawText: string = data.consultation ?? "";
         const sections = data.sections && typeof data.sections === "object" ? data.sections : null;
+        const sectionsForStorage =
+          data.sections_for_storage && typeof data.sections_for_storage === "object"
+            ? data.sections_for_storage
+            : data.sectionsForStorage && typeof data.sectionsForStorage === "object"
+              ? data.sectionsForStorage
+              : sections;
+
+        // Best-effort persist:
+        // - Prefer dedicated endpoint: POST /api/ai-consultation/save (PUT semantics + session existence check)
+        // - Fallback to legacy allowlist workaround: POST /api/mbti/sessions?mode=ai_save
+        // UI should still work even if persistence fails.
+        if (sessionId) {
+          const provider = data.sections_source || data.provider || "vercel";
+          const objectName = data.objectName || data.object_name || null;
+
+          const savePayload = {
+            session_id: sessionId,
+            mbti_result: mbtiType,
+            mbtiType: mbtiType,
+            provider,
+            consultation: rawText || null,
+            object_name: objectName,
+            objectName,
+            sections_for_storage: sectionsForStorage,
+            sectionsForStorage,
+            sections,
+          };
+
+          // 1) Prefer endpoint #8
+          fetch(`${API_BASE}/api/ai-consultation/save`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify(savePayload),
+          })
+            .then((resp) => {
+              // If the Portal/router blocks this endpoint, fallback to legacy route.
+              if (resp.status === 404 || resp.status === 405) {
+                return fetch(`${API_BASE}/api/mbti/sessions?mode=ai_save`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  credentials: "include",
+                  body: JSON.stringify({
+                    ...savePayload,
+                    mode: "ai_save",
+                    // Include required fields (keep Portal allowlist/validation happy).
+                    user_name: userName.trim(),
+                    user_profile_id: userProfileId.trim(),
+                    mbti_result: mbtiType,
+                    answers: answersPayload,
+                  }),
+                });
+              }
+              return null;
+            })
+            .catch(() => {
+              // ignore persistence errors – consultation is still shown to the user
+            });
+        }
 
         let normalizedEntries = sections
           ? Object.entries(sections).filter(([, value]) => sectionHasContent(value))
